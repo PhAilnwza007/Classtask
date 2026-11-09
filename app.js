@@ -214,7 +214,7 @@ function themeBtn() {
 }
 function setTheme(dark) {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = dark ? '#151912' : '#f4efe4';
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = dark ? '#151912' : '#ece4d4';
   try { localStorage.setItem('ct-theme', dark ? 'dark' : 'light'); } catch (e) {}
 }
 function authBtn() {
