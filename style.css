@@ -323,3 +323,36 @@ body.focus-on .dock{display:none}
 .focus-sheet button[aria-checked="true"]::after{content:"✓";margin-left:auto;color:#2d8a62}
 .focus-sheet p{margin:8px 18px 6px;font-size:12px;color:#6f6a5e}
 .focus button:focus-visible{outline:2px solid #f3e7a1;outline-offset:3px}
+
+/* ---------- focus background v2: sunlit game-forest to match the tree art ---------- */
+.focus{background:
+  radial-gradient(60% 34% at 50% 50%,rgba(186,232,110,.55),rgba(186,232,110,0) 70%),
+  radial-gradient(90% 55% at 78% -8%,rgba(255,242,170,.75),rgba(255,242,170,0) 60%),
+  linear-gradient(180deg,#8fc75a 0%,#5f9e3a 30%,#3c7a2c 55%,#24561f 78%,#163a17 100%)}
+.focus-rays{inset:-10% -30% auto auto;width:110%;height:80%;opacity:.5;
+  background:repeating-linear-gradient(112deg,rgba(255,250,200,0) 0 70px,rgba(255,248,190,.22) 70px 130px);filter:blur(16px)}
+.focus-forest{position:absolute;left:0;right:0;bottom:0;width:100%;height:78%;pointer-events:none}
+.focus-forest .far{fill:#4f8a33;opacity:.55;filter:blur(2px)}
+.focus-forest .near{fill:#2c5e22;opacity:.75;filter:blur(1px)}
+.focus-motes{position:absolute;inset:0;pointer-events:none}
+.focus-motes i{position:absolute;width:6px;height:6px;border-radius:50%;background:#f4ffb0;box-shadow:0 0 10px 3px rgba(230,255,140,.7);opacity:.0}
+@media (prefers-reduced-motion:no-preference){.focus-motes i{animation:mote 9s ease-in-out infinite}}
+@media (prefers-reduced-motion:reduce){.focus-motes i{opacity:.55}}
+@keyframes mote{0%{opacity:0;transform:translate(0,10px) scale(.6)}25%{opacity:.9}50%{transform:translate(12px,-30px) scale(1)}75%{opacity:.6}100%{opacity:0;transform:translate(-6px,-70px) scale(.5)}}
+.focus-island::before{left:0;right:0;bottom:10%;height:36%;background:radial-gradient(ellipse at center,rgba(214,246,140,.95) 0%,rgba(170,226,100,.6) 40%,rgba(140,210,90,0) 72%);filter:blur(6px)}
+.focus-island .tree-img{-webkit-mask-image:radial-gradient(closest-side at 50% 52%,#000 66%,transparent 100%);mask-image:radial-gradient(closest-side at 50% 52%,#000 66%,transparent 100%)}
+.focus-top,.focus-clock,.focus-msg,.focus-got,.focus-btns,.focus-home,.focus-island{position:relative;z-index:1}
+.focus-sound{z-index:2}
+.focus-clock,.focus-subj,.focus-msg{text-shadow:0 2px 12px rgba(10,40,10,.45)}
+.focus .t-sub{color:rgba(250,255,235,.85)}
+.fb{background:rgba(15,45,15,.35)}
+.focus-home{background:rgba(15,45,15,.38)}
+/* withered: dusk colours */
+.focus.withered{background:
+  radial-gradient(60% 34% at 50% 50%,rgba(200,190,120,.35),rgba(200,190,120,0) 70%),
+  linear-gradient(180deg,#8d9a6a 0%,#6b7a4c 35%,#4a5636 65%,#2c3420 100%)}
+.focus.withered .focus-motes{display:none}
+.focus.withered .focus-forest .far{fill:#6b7046}
+.focus.withered .focus-forest .near{fill:#3e4428}
+.focus.withered .focus-island::before{background:radial-gradient(ellipse at center,rgba(210,200,140,.7),rgba(170,160,110,.3) 40%,transparent 72%)}
+.focus-sheet{z-index:5}

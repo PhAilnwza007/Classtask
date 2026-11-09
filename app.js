@@ -702,13 +702,21 @@ function viewTree() {
   if (myNo != null && !rows.some(r => r.no === myNo)) h += '<p class="t-sub" style="margin-top:10px"><button class="btn small" data-act="ft-log" data-no="' + myNo + '">ประวัติการอ่านของฉัน</button></p>' + (ft.logOpen === myNo ? logHtml(myNo) : '');
   return h;
 }
+// soft forest behind the tree: two rows of round tree shapes and floating light motes (fixed positions so it doesn't jump on re-render)
+function forestBg() {
+  const row = (y, r, n, cls) => { let g = ''; for (let i = 0; i <= n; i++) { const x = i * (400 / n) + (i % 2 ? 14 : -10), rr = r * (0.8 + ((i * 37) % 10) / 25); g += '<circle cx="' + x.toFixed(0) + '" cy="' + (y - rr * 0.6).toFixed(0) + '" r="' + rr.toFixed(0) + '"/><rect x="' + (x - 3).toFixed(0) + '" y="' + (y - rr * 0.3).toFixed(0) + '" width="6" height="' + (rr * 1.4).toFixed(0) + '"/>'; } return '<g class="' + cls + '">' + g + '<rect x="-20" y="' + y + '" width="440" height="400"/></g>'; };
+  const svg = '<svg class="focus-forest" viewBox="0 0 400 700" preserveAspectRatio="xMidYMax slice" aria-hidden="true">' + row(430, 46, 7, 'far') + row(520, 58, 6, 'near') + '</svg>';
+  let motes = '';
+  for (let i = 0; i < 16; i++) motes += '<i style="left:' + ((i * 61) % 96 + 2) + '%;top:' + ((i * 37) % 70 + 12) + '%;animation-delay:-' + ((i * 1.7) % 9).toFixed(1) + 's;animation-duration:' + (7 + (i % 5) * 1.6).toFixed(1) + 's"></i>';
+  return svg + '<div class="focus-motes" aria-hidden="true">' + motes + '</div>';
+}
 function focusOverlay() {
   const S2 = ft.session; if (!S2) return '';
   const total = (ft.me ? ft.me.totalSec || 0 : 0) + (S2.phase === 'focus' && running() && ft.mine ? runSec() : 0);
   const img = treeSvg(total, 320), ph = S2.phase;
   const done = ph === 'done' || ph === 'withered';
   let h = '<div class="focus' + (ph === 'withered' ? ' withered' : '') + (ph === 'paused' ? ' paused' : '') + '" role="dialog" aria-modal="true" aria-label="โหมดโฟกัส">' +
-    '<div class="focus-rays" aria-hidden="true"></div>' +
+    '<div class="focus-rays" aria-hidden="true"></div>' + forestBg() +
     '<div class="focus-top"><div class="focus-subj"><i></i>' + esc(S2.subject) + '</div><div class="t-sub">' + (done ? 'เซสชันนี้' : 'ตอนนี้ฉันกำลังโฟกัสกับ…') + '</div></div>' +
     (done ? '' : '<button class="focus-sound" data-act="ft-sound" aria-label="เสียงบรรยากาศ" aria-expanded="' + SND.open + '">' + ico(SND.kind === 'off' ? 'mute' : 'sound') + '</button>') +
     '<div class="focus-island">' + img + '</div>';
