@@ -13,7 +13,12 @@ const ICON = {
   list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>'
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15Z"/><path d="M6.5 17A2.5 2.5 0 0 0 4 19.5 2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>'
 };
 const ico = k => '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
 
@@ -142,9 +147,9 @@ const rosterText = r => r.map(s => s.no + ' ' + s.name + (s.nick ? ' (' + s.nick
 function render() {
   if ((ui.editing || ui.rosterEdit || ui.auth) && document.querySelector('form.edit')) return;
   const focused = document.activeElement && document.activeElement.id;
-  let h = '<div class="wrap"><header><div class="brand"><div class="logo"><div class="logo-mark">' + ico('check') + '</div><div><h1>Class<span>Task</span></h1>' +
-    '<div class="cls">' + esc(S.className) + (S.roster.length ? ' · ' + S.roster.length + ' คน' : '') + '</div></div></div>' +
-    '<div class="mode">' + authHtml() + '</div></div></header><main>';
+  const td = new Date();
+  let h = '<div class="wrap"><header><div class="top"><div class="today-h"><div class="big">' + TDF[td.getDay()] + ' ' + td.getDate() + '</div>' +
+    '<div class="t-sub">' + TMF[td.getMonth()] + ' · ห้อง ' + esc(S.className) + '</div></div><div class="head-r">' + themeBtn() + authBtn() + '</div></div>' + authPanel() + '</header><main>';
   if (!configured) h += '<div class="setup"><b>ยังไม่ได้ใส่ค่า Firebase</b><p>เปิดไฟล์ <code>firebase-config.js</code> แล้ววางค่า config</p></div>';
   else if (S.error && !S.loaded.tasks) h += '<div class="empty">' + esc(S.error) + '</div>';
   else if (!S.loaded.tasks || !S.loaded.cls) h += '<p class="loading">กำลังโหลดข้อมูลห้อง…</p>';
@@ -161,25 +166,40 @@ function render() {
   if (focused) { const el = document.getElementById(focused); if (el) el.focus(); }
 }
 const tab = (k, l, ic) => '<button data-act="view" data-v="' + k + '" aria-current="' + (ui.view === k) + '" aria-label="' + l + '">' + ico(ic) + '<span class="lbl">' + l + '</span></button>';
-function authHtml() {
-  if (!configured) return 'ยังไม่ได้เชื่อม Firebase';
+const isDark = () => document.documentElement.dataset.theme === 'dark';
+function themeBtn() {
+  const d = isDark();
+  return '<button class="theme" data-act="theme" aria-label="' + (d ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด') + '" title="' + (d ? 'โหมดสว่าง' : 'โหมดมืด') + '">' + ico(d ? 'sun' : 'moon') + '</button>';
+}
+function setTheme(dark) {
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = dark ? '#151912' : '#f4efe4';
+  try { localStorage.setItem('ct-theme', dark ? 'dark' : 'light'); } catch (e) {}
+}
+function authBtn() {
+  if (!configured) return '';
+  if (!user) return '<button class="btn small primary" data-act="login">เข้าสู่ระบบ</button>';
+  return '<button class="avatar" data-act="menu" aria-expanded="' + !!ui.menu + '" aria-label="บัญชีของฉัน">' + (myNo != null ? myNo : ico('user')) + '</button>';
+}
+function authPanel() {
+  if (!configured) return '';
   if (!user) {
-    if (ui.auth) {
-      const su = ui.auth === 'signup';
-      return '<form class="edit" data-id="auth" style="margin-top:8px;width:100%">' +
-        '<div class="full"><b>' + (su ? 'สมัครบัญชีใหม่' : 'เข้าสู่ระบบ') + '</b></div>' +
-        '<label>อีเมล<input id="f-email" name="email" type="email" autocomplete="username" required></label>' +
-        '<label>รหัสผ่าน' + (su ? ' (อย่างน้อย 6 ตัว)' : '') + '<input id="f-pass" name="pass" type="password" minlength="6" autocomplete="' + (su ? 'new-password' : 'current-password') + '" required></label>' +
-        '<div class="row-actions full"><button class="btn primary" type="submit">' + (su ? 'สมัคร' : 'เข้าสู่ระบบ') + '</button>' +
-        '<button class="btn" type="button" data-act="authswitch">' + (su ? 'มีบัญชีแล้ว' : 'ยังไม่มีบัญชี สมัครใหม่') + '</button>' +
-        (su ? '' : '<button class="btn" type="button" data-act="forgot">ลืมรหัสผ่าน</button>') +
-        '<button class="btn" type="button" data-act="authcancel">ยกเลิก</button></div></form>';
-    }
-    return '<span class="auth">เข้าสู่ระบบเพื่อกดส่งงานของตัวเอง <button class="btn small primary" data-act="login">เข้าสู่ระบบ</button><button class="btn small" data-act="signup">สมัคร</button></span>';
+    if (!ui.auth) return '';
+    const su = ui.auth === 'signup';
+    return '<form class="edit" data-id="auth">' +
+      '<div class="full"><b>' + (su ? 'สมัครบัญชีใหม่' : 'เข้าสู่ระบบ') + '</b><div class="t-sub">เพื่อกดส่งงานของตัวเอง</div></div>' +
+      '<label>อีเมล<input id="f-email" name="email" type="email" autocomplete="username" required></label>' +
+      '<label>รหัสผ่าน' + (su ? ' (อย่างน้อย 6 ตัว)' : '') + '<input id="f-pass" name="pass" type="password" minlength="6" autocomplete="' + (su ? 'new-password' : 'current-password') + '" required></label>' +
+      '<div class="row-actions full"><button class="btn primary" type="submit">' + (su ? 'สมัคร' : 'เข้าสู่ระบบ') + '</button>' +
+      '<button class="btn" type="button" data-act="authswitch">' + (su ? 'มีบัญชีแล้ว' : 'ยังไม่มีบัญชี สมัครใหม่') + '</button>' +
+      (su ? '' : '<button class="btn" type="button" data-act="forgot">ลืมรหัสผ่าน</button>') +
+      '<button class="btn" type="button" data-act="authcancel">ยกเลิก</button></div></form>';
   }
+  if (!ui.menu) return '';
   const me = myNo != null && stu(myNo);
-  const who = me ? esc(me.nick || me.name) : esc(user.email);
-  return '<span class="auth">' + (canEdit ? '<b>โหมดแก้ไข</b>' : '') + '<span class="me">' + (myNo != null ? '<span class="avatar">' + myNo + '</span>' : '') + who + '</span><button class="btn small" data-act="logout">ออกจากระบบ</button></span>';
+  const who = me ? 'เลขที่ ' + myNo + ' ' + esc(me.nick || me.name) : esc(user.email);
+  return '<div class="menu"><div><div class="t-title">' + who + '</div><div class="t-sub">' + (canEdit ? 'โหมดแก้ไข · ' : '') + esc(user.email || '') + '</div></div>' +
+    '<button class="btn small" data-act="logout">ออกจากระบบ</button></div>';
 }
 function claimHtml() {
   if (!user || myNo != null || !S.roster.length) return '';
@@ -202,7 +222,7 @@ function heroHtml(pending) {
   const next = pending.filter(t => daysLeft(t) >= 0 && (!student || !iSent(t)))[0];
   if (!next) return '<div class="hero calm"><div class="hero-k">งานถัดไป</div><p class="hero-title" style="cursor:default">' + (student ? 'ไม่มีงานที่คุณต้องส่ง' : 'ไม่มีงานค้างในช่วงนี้') + '</p></div>';
   const n = daysLeft(next), d = pd(next.due), st = status(next);
-  let h = '<div class="hero"><div class="hero-top"><span class="hero-k">งานถัดไป' + (student ? 'ของฉัน' : 'ของห้อง') + '</span><span class="pill p-' + st.k + '">' + st.label + '</span></div>' +
+  let h = '<div class="hero"><div class="hero-top"><span class="hero-k">งานถัดไป' + (student ? 'ของฉัน' : 'ของห้อง') + '</span>' + pillHtml(next) + '</div>' +
     '<button class="hero-title" data-act="open" data-id="' + next.id + '">' + esc(next.title) + '</button>' +
     '<div class="hero-meta"><div><div class="hero-sub">' + esc(next.subject) + '</div><div class="hero-date">' + TD[d.getDay()] + ' ' + d.getDate() + ' ' + TM[d.getMonth()] + '</div></div>' +
     '<div class="count">' + (n === 0 ? '<span class="n" style="font-size:30px">วันนี้</span>' : '<span class="n">' + n + '</span><span class="u">วัน</span>') + '</div></div>';
@@ -211,23 +231,23 @@ function heroHtml(pending) {
 }
 function viewTasks() {
   const all = sorted(), pending = all.filter(t => !isDone(t));
-  const td = new Date();
-  let h = '<div class="today-h"><div class="big">' + TDF[td.getDay()] + ' ' + td.getDate() + '</div><div class="t-sub">' + TMF[td.getMonth()] + ' ' + (td.getFullYear() + 543) + '</div></div>';
+  let h = '';
   if (S.tasks.length) h += heroHtml(pending);
   if (myNo != null && !canEdit) {
     const mine = pending.filter(t => !iSent(t));
     const late = mine.filter(t => daysLeft(t) < 0).length;
-    h += '<div class="summary"><div class="stat"><div class="n">' + mine.length + '</div><div class="l">งานที่ฉันยังไม่ส่ง</div></div>' +
-      '<div class="stat soon"><div class="n">' + mine.filter(t => { const n = daysLeft(t); return n >= 0 && n <= 7; }).length + '</div><div class="l">ต้องส่งภายใน 7 วัน</div></div>' +
+    h += '<div class="summary"><div class="stat"><div class="n">' + mine.length + '</div><div class="l">ค้างส่ง</div></div>' +
+      '<div class="stat soon"><div class="n">' + mine.filter(t => { const n = daysLeft(t); return n >= 0 && n <= 3; }).length + '</div><div class="l">ใกล้กำหนด</div></div>' +
       '<div class="stat late"><div class="n">' + late + '</div><div class="l">เลยกำหนด</div></div></div>';
   } else {
     const late = pending.filter(t => daysLeft(t) < 0).length;
-    const week = pending.filter(t => { const n = daysLeft(t); return n >= 0 && n <= 7; }).length;
-    h += '<div class="summary"><div class="stat"><div class="n">' + pending.length + '</div><div class="l">งานที่ยังไม่ปิด</div></div>' +
-      '<div class="stat soon"><div class="n">' + week + '</div><div class="l">ต้องส่งภายใน 7 วัน</div></div>' +
+    const week = pending.filter(t => { const n = daysLeft(t); return n >= 0 && n <= 3; }).length;
+    h += '<div class="summary"><div class="stat"><div class="n">' + pending.length + '</div><div class="l">ค้างส่ง</div></div>' +
+      '<div class="stat soon"><div class="n">' + week + '</div><div class="l">ใกล้กำหนด</div></div>' +
       '<div class="stat late"><div class="n">' + late + '</div><div class="l">เลยกำหนด</div></div></div>';
   }
-  h += '<div class="toolbar"><div class="chips"><button class="chip" data-act="filter" data-v="all" aria-pressed="' + (ui.filter === 'all') + '">ทุกวิชา</button>';
+  h += '<div class="sec-h"><h2>งานทั้งหมด</h2><span>' + S.tasks.length + ' งาน</span></div>';
+  h += '<div class="toolbar"><div class="chips"><button class="chip" data-act="filter" data-v="all" aria-pressed="' + (ui.filter === 'all') + '">ทั้งหมด</button>';
   subjects().forEach(s => { h += '<button class="chip" data-act="filter" data-v="' + esc(s) + '" aria-pressed="' + (ui.filter === s) + '">' + esc(s) + '</button>'; });
   h += '</div>' + (canEdit ? '<button class="btn primary" data-act="new">เพิ่มงาน</button>' : '') + '</div>';
   if (ui.editing === 'new') h += formHtml(null);
@@ -241,17 +261,20 @@ function viewTasks() {
   if (dn.length) h += '<div class="group-h">ส่งครบแล้ว (' + dn.length + ')</div>' + (ui.showPast ? '<div class="list">' + dn.map(taskHtml).join('') + '</div>' : '<button class="btn small" data-act="past">แสดงงานที่ส่งครบแล้ว</button>');
   return h;
 }
+function pillHtml(t) {
+  const st = status(t);
+  if (myNo != null && !isDone(t) && iSent(t)) return '<span class="pill p-done">' + ico('check') + 'ฉันส่งแล้ว</span>';
+  const ic = st.k === 'done' ? ico('check') : (st.k === 'wait' ? '' : ico('clock'));
+  return '<span class="pill p-' + st.k + '">' + ic + st.label + '</span>';
+}
 function taskHtml(t) {
   if (ui.editing === t.id) return formHtml(t);
-  const st = status(t), d = pd(t.due), n = total(), c = doneCount(t), open = ui.open === t.id;
-  const mineSent = iSent(t);
-  const pill = myNo != null && !isDone(t)
-    ? (mineSent ? '<span class="pill p-done">ฉันส่งแล้ว</span>' : '<span class="pill p-' + st.k + '">' + st.label + '</span>')
-    : '<span class="pill p-' + st.k + '">' + st.label + '</span>';
+  const d = pd(t.due), n = total(), c = doneCount(t), open = ui.open === t.id, left = daysLeft(t);
   let h = '<div class="task"><button class="task-row" data-act="open" data-id="' + t.id + '" aria-expanded="' + open + '">' +
-    '<div class="date"><div class="d">' + d.getDate() + '</div><div class="m">' + TD[d.getDay()] + ' ' + TM[d.getMonth()] + '</div></div>' +
-    '<div class="t-main"><div class="t-sub"><span class="sj">' + esc(t.subject) + '</span>' + (n ? ' · ส่งแล้ว ' + c + '/' + n : '') + '</div><div class="t-title">' + esc(t.title) + '</div>' +
-    (n ? '<div class="bar"><i style="width:' + Math.min(100, Math.round(c / n * 100)) + '%"></i></div>' : '') + '</div>' + pill + '</button>';
+    '<div class="t-top"><span class="sj">' + ico('book') + esc(t.subject) + '</span>' + pillHtml(t) + '</div>' +
+    '<div class="t-title">' + esc(t.title) + '</div>' +
+    '<div class="t-due">' + ico('clock') + 'ส่ง ' + TD[d.getDay()] + ' ' + d.getDate() + ' ' + TM[d.getMonth()] + (left < 0 && !isDone(t) ? ' · เลยมา ' + (-left) + ' วัน' : '') + '</div>' +
+    (n ? '<div class="t-prog"><div class="bar"><i style="width:' + Math.min(100, Math.round(c / n * 100)) + '%"></i></div><span>' + c + '/' + n + ' ส่งแล้ว</span></div>' : '') + '</button>';
   if (open) h += detailHtml(t);
   return h + '</div>';
 }
@@ -362,7 +385,9 @@ document.addEventListener('click', ev => {
       sendPasswordResetEmail(auth, email).then(() => toast('ส่งลิงก์ตั้งรหัสใหม่ไปที่อีเมลแล้ว'), e => toast(msgFor(e)));
       return;
     }
-    case 'logout': signOut(auth); ui.claimOpen = false; return;
+    case 'menu': ui.menu = !ui.menu; break;
+    case 'theme': setTheme(!isDark()); break;
+    case 'logout': ui.menu = false; signOut(auth); ui.claimOpen = false; return;
     case 'claimopen': ui.claimOpen = true; break;
     case 'claimnext': if (!ui.claimPick) { toast('เลือกเลขที่ก่อน'); return; } ui.claimConfirm = true; break;
     case 'claimback': ui.claimConfirm = false; break;
