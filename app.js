@@ -160,12 +160,54 @@ function render() {
     else h += viewTasks();
   }
   h += '</main></div>';
-  h += '<nav class="dock" aria-label="เมนูหลัก">' + tab('tasks', 'งาน', 'list') + tab('cal', 'ปฏิทิน', 'cal') + tab('roster', 'รายชื่อ', 'users') +
-    (canEdit ? '<button class="add" data-act="new" aria-label="เพิ่มงาน">' + ico('plus') + '</button>' : '') + '</nav>';
   root.innerHTML = h;
+  updateDock();
   if (focused) { const el = document.getElementById(focused); if (el) el.focus(); }
 }
-const tab = (k, l, ic) => '<button data-act="view" data-v="' + k + '" aria-current="' + (ui.view === k) + '" aria-label="' + l + '">' + ico(ic) + '<span class="lbl">' + l + '</span></button>';
+/* dock lives outside #root so the sliding pill can animate between tabs */
+let dockEl = null;
+function updateDock() {
+  if (!dockEl) {
+    dockEl = document.createElement('nav'); dockEl.className = 'dock'; dockEl.setAttribute('aria-label', 'เมนูหลัก');
+    document.body.appendChild(dockEl); bindDock();
+  }
+  const tabs = [['tasks', 'งาน', 'list'], ['cal', 'ปฏิทิน', 'cal'], ['roster', 'รายชื่อ', 'users']];
+  const key = tabs.map(t => t[0]).join() + (canEdit ? ',new' : '');
+  if (dockEl.dataset.key !== key) {
+    dockEl.innerHTML = '<span class="dock-ind" aria-hidden="true"></span>' +
+      tabs.map(t => '<button class="tab" data-act="view" data-v="' + t[0] + '" aria-label="' + t[1] + '">' + ico(t[2]) + '</button>').join('') +
+      (canEdit ? '<button class="tab add" data-act="new" aria-label="เพิ่มงาน">' + ico('plus') + '</button>' : '');
+    dockEl.dataset.key = key;
+  }
+  dockEl.querySelectorAll('.tab[data-v]').forEach(b => b.setAttribute('aria-current', String(b.dataset.v === ui.view)));
+  moveInd(dockEl.querySelector('.tab[aria-current="true"]'), false);
+}
+function moveInd(btn, pressed) {
+  const ind = dockEl && dockEl.querySelector('.dock-ind'); if (!ind) return;
+  if (!btn) { ind.style.opacity = '0'; return; }
+  ind.style.opacity = '1';
+  ind.style.width = btn.offsetWidth + 'px';
+  ind.style.transform = 'translateX(' + btn.offsetLeft + 'px)' + (pressed ? ' scale(1.1)' : '');
+}
+function bindDock() {
+  let down = false;
+  const tabAt = x => [...dockEl.querySelectorAll('.tab')].find(b => { const r = b.getBoundingClientRect(); return x >= r.left && x <= r.right; });
+  dockEl.addEventListener('pointerdown', e => {
+    if (e.button > 0) return;
+    down = true; dockEl.classList.add('press');
+    try { dockEl.setPointerCapture(e.pointerId); } catch (err) {}
+    moveInd(tabAt(e.clientX), true);
+  });
+  dockEl.addEventListener('pointermove', e => { if (down) { const b = tabAt(e.clientX); if (b) moveInd(b, true); } });
+  const end = (e, go) => {
+    if (!down) return; down = false; dockEl.classList.remove('press');
+    const b = go && tabAt(e.clientX);
+    if (b) b.click(); else updateDock();
+  };
+  dockEl.addEventListener('pointerup', e => end(e, true));
+  dockEl.addEventListener('pointercancel', e => end(e, false));
+  window.addEventListener('resize', () => updateDock());
+}
 const isDark = () => document.documentElement.dataset.theme === 'dark';
 function themeBtn() {
   const d = isDark();

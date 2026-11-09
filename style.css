@@ -8,7 +8,7 @@
   --blob1:rgba(95,132,69,.42); --blob2:rgba(201,132,140,.40); --blob3:rgba(226,234,211,.95); --blob4:rgba(245,227,226,.95);
   --f-display:"Anuphan","IBM Plex Sans Thai",system-ui,sans-serif;
   --f-body:"Anuphan","IBM Plex Sans Thai",system-ui,sans-serif;
-  --blur:blur(16px) saturate(140%);
+  --blur:blur(16px) saturate(140%); --ind:rgba(42,42,36,.08);
 }
 /* light by default (design B); dark when the viewer turns it on with the header toggle */
 :root{color-scheme:light}
@@ -18,6 +18,7 @@
   --accent:#8db46e; --accent-strong:#a9cb8c; --accent-soft:rgba(141,180,110,.18); --on-accent:#142010;
   --pink:#e2a6ad; --pink-soft:rgba(226,166,173,.16);
   --late:#e48c76; --late-soft:rgba(228,140,118,.16); --soon:#e0b060; --soon-soft:rgba(224,176,96,.16); --done:#a9cb8c; --done-soft:rgba(141,180,110,.18);
+  --ind:rgba(255,255,255,.13);
   --blob1:rgba(95,132,69,.38); --blob2:rgba(160,95,105,.32); --blob3:rgba(60,85,45,.40); --blob4:rgba(120,70,80,.30);
   color-scheme:dark}
 :root[data-theme="dark"] .p-wait{background:rgba(255,255,255,.08)}
@@ -66,15 +67,18 @@ header form.edit{margin-top:4px}
 
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-/* floating dock (tabs) */
-.dock{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:8;display:flex;gap:4px;align-items:center;padding:7px;border-radius:999px;max-width:calc(100% - 32px)}
-.dock button{font:inherit;font-weight:500;font-size:14px;display:inline-flex;align-items:center;gap:8px;border:0;background:none;color:var(--muted);height:46px;min-width:46px;padding:0 13px;border-radius:999px;cursor:pointer;white-space:nowrap}
-.dock button svg{width:21px;height:21px;stroke:currentColor;flex:none}
-.dock button .lbl{display:none}
-.dock button[aria-current="true"]{background:var(--accent);color:var(--on-accent);padding:0 18px 0 14px}
-.dock button[aria-current="true"] .lbl{display:inline}
-.dock .add{background:var(--pink);color:#fff;width:46px;padding:0;justify-content:center}
-@media (prefers-reduced-motion:no-preference){.dock button{transition:background .2s,color .2s}}
+/* floating dock: wide glass capsule, icons only, a pill that slides (and follows the finger) like iOS tab bars */
+.dock{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:8;width:min(420px,calc(100% - 32px));display:flex;align-items:center;padding:6px;border-radius:999px;touch-action:none;-webkit-user-select:none;user-select:none}
+.dock .tab{position:relative;z-index:1;flex:1;height:52px;display:grid;place-items:center;border:0;background:none;color:var(--muted);border-radius:999px;cursor:pointer;-webkit-tap-highlight-color:transparent;font:inherit}
+.dock .tab svg{width:25px;height:25px;stroke:currentColor;transition:transform .25s}
+.dock .tab[aria-current="true"]{color:var(--fg)}
+.dock .tab[aria-current="true"] svg{stroke-width:2.6}
+.dock .add{color:var(--pink)}
+.dock .add svg{stroke-width:2.6}
+.dock-ind{position:absolute;left:0;top:6px;bottom:6px;width:0;border-radius:999px;background:var(--ind);opacity:0;transition:transform .5s cubic-bezier(.3,1.4,.5,1),width .3s ease,opacity .2s}
+.dock.press .dock-ind{transition:transform .22s cubic-bezier(.3,1.2,.5,1),width .2s ease,opacity .2s}
+.dock.press .tab svg{transform:scale(.94)}
+@media (prefers-reduced-motion:reduce){.dock-ind,.dock .tab svg{transition:none}}
 
 /* hero: next task */
 .hero{border-radius:26px;padding:20px;margin:14px 0 4px;display:flex;flex-direction:column;gap:10px}
@@ -144,6 +148,9 @@ form.edit .full{grid-column:1/-1}
 label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--muted);min-width:0}
 input,textarea,select{font:inherit;font-size:16px;color:var(--fg);background:var(--glass-strong);border:1px solid var(--stroke);border-radius:12px;padding:10px 12px;width:100%}
 textarea{resize:vertical;min-height:80px}
+/* iOS Safari draws date inputs wider than their box; keep them inside the form */
+input[type="date"]{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;min-height:46px;text-align:left}
+input[type="date"]::-webkit-date-and-time-value{text-align:left}
 
 /* calendar */
 .cal-head{display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px;gap:8px}
