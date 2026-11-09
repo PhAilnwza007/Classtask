@@ -3,7 +3,7 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, se
 import { getFirestore, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js?v=2";
 import { DEFAULT_ROSTER } from "./roster-default.js";
-import { TREE_IMG } from "./trees.js?v=2";
+import { TREE_IMG } from "./trees.js?v=3";
 
 const TM = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const TMF = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
@@ -447,7 +447,9 @@ function viewRoster() {
    - every session is written to an append-only log */
 const FT_CAP = 6 * 3600, FT_TREE = 300, BEAT_MS = 60000;
 // one focus session grows one tree; stages are fractions of the chosen time
-const FT_STAGES = [[0, 'เริ่มปลูก'], [0.08, 'เมล็ดเริ่มงอก'], [0.2, 'ต้นกล้า'], [0.4, 'ต้นไม้เติบโต'], [0.65, 'ต้นไม้แผ่กิ่ง'], [1, 'ต้นไม้สมบูรณ์']];
+// [fraction of the chosen time, name, picture]; starts as a young sprout (no seed stage)
+const FT_STAGES = [[0, 'ต้นอ่อน', 's1'], [0.25, 'ต้นกล้า', 's2'], [0.55, 'ต้นไม้เติบโต', 's3'], [1, 'ต้นไม้สมบูรณ์', 's5']];
+const FULL = FT_STAGES.length - 1;
 const FT_GOALS = [30, 45, 60, 90, 120]; // minutes; 0 = no limit (a tree after 30 minutes)
 const OPEN_GOAL = 30;
 const FT_KINDS = [{ name: 'ต้นไม้', img: 's5' }];
@@ -681,7 +683,7 @@ async function loadLog(no) {
 }
 const stageOf = p => FT_STAGES.filter(x => p >= x[0]).length - 1;
 function treeSvg(st, size) {
-  return '<img class="tree-img" data-st="' + st + '" src="' + TREE_IMG['s' + st] + '" width="' + size + '" height="' + size + '" alt="' + FT_STAGES[st][1] + '" decoding="async">';
+  return '<img class="tree-img" data-st="' + st + '" src="' + TREE_IMG[FT_STAGES[st][2]] + '" width="' + size + '" height="' + size + '" alt="' + FT_STAGES[st][1] + '" decoding="async">';
 }
 function viewTree() {
   if (!ft.loaded) { ft.loaded = 'loading'; loadRanking(); }
@@ -694,7 +696,7 @@ function viewTree() {
   if (!user) h += '<p class="hero-title" style="cursor:default">เข้าสู่ระบบเพื่อเริ่มปลูกต้นไม้</p><button class="btn primary" data-act="login">เข้าสู่ระบบ</button>';
   else if (myNo == null) h += '<p class="hero-title" style="cursor:default">ผูกเลขที่ของคุณก่อน แล้วค่อยเริ่มปลูกต้นไม้</p><p class="t-sub">ดูที่ด้านบนของหน้างาน หรือแท็บรายชื่อ</p>';
   else {
-    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(trees ? 5 : 0, 150) + '</div><div class="ft-info"><div class="hero-k">ป่าของฉัน</div>' +
+    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(trees ? FULL : 0, 150) + '</div><div class="ft-info"><div class="hero-k">ป่าของฉัน</div>' +
       '<div class="ft-stage">' + trees + ' ต้น</div><div class="t-sub">อ่านสะสมทั้งหมด ' + fmtMin(total) + '</div></div></div>';
     h += '<div><div class="hero-k" style="margin-bottom:8px">ตั้งเวลาอ่าน</div><div class="chips ft-subj">' +
       FT_GOALS.concat([0]).map(g => '<button class="chip" data-act="ft-goal" data-v="' + g + '" aria-pressed="' + (ft.goal === g) + '">' + (g ? g + ' นาที' : 'ไม่จำกัด') + '</button>').join('') + '</div>' +
@@ -710,7 +712,7 @@ function viewTree() {
   h += '</div>';
   if (user && myNo != null && trees > 0) {
     h += '<div class="forest">';
-    for (let i = 0; i < Math.min(trees, 30); i++) h += '<span class="forest-t">' + treeSvg(5, 56) + '</span>';
+    for (let i = 0; i < Math.min(trees, 30); i++) h += '<span class="forest-t">' + treeSvg(FULL, 56) + '</span>';
     h += (trees > 30 ? '<span class="t-sub">+' + (trees - 30) + '</span>' : '') + '</div>';
   }
   // ranking
@@ -749,12 +751,12 @@ function forestBg() {
 function focusOverlay() {
   const S2 = ft.session; if (!S2) return '';
   const ph = S2.phase, done = ph === 'done' || ph === 'withered', g = goalSecOf(S2), t = sessionSec();
-  const st = done ? (S2.tree ? 5 : stageOf(S2.credited / g)) : stageOf(t / g);
+  const st = done ? (S2.tree ? FULL : stageOf(S2.credited / g)) : stageOf(t / g);
   let h = '<div class="focus' + (ph === 'withered' ? ' withered' : '') + (ph === 'paused' ? ' paused' : '') + '" role="dialog" aria-modal="true" aria-label="โหมดโฟกัส">' +
     '<div class="focus-rays" aria-hidden="true"></div>' + forestBg() +
     '<div class="focus-top"><div class="focus-subj"><i></i>' + esc(S2.subject) + '</div><div class="t-sub">' + (done ? 'รอบนี้' : (S2.goal ? 'ตั้งไว้ ' + S2.goal + ' นาที' : 'จับเวลาไม่จำกัด')) + '</div></div>' +
     (done ? '' : '<button class="focus-sound" data-act="ft-sound" aria-label="เสียงบรรยากาศ" aria-expanded="' + SND.open + '">' + ico(SND.kind === 'off' ? 'mute' : 'sound') + '</button>') +
-    '<div class="focus-island">' + treeSvg(st, 320) + '<div class="focus-stage">' + FT_STAGES[st][1] + '</div></div>';
+    '<div class="focus-island"><div class="tree-stand">' + treeSvg(st, 320) + '</div>' + '<div class="focus-stage">' + FT_STAGES[st][1] + '</div></div>';
   if (done) {
     let msg;
     if (ph === 'withered') msg = 'ออกจากหน้าเว็บระหว่างอ่าน ต้นไม้เลยเหี่ยว<br>ไม่เป็นไร ครั้งหน้าจะดีขึ้น';
