@@ -7,6 +7,15 @@ import { DEFAULT_ROSTER } from "./roster-default.js";
 const TM = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const TMF = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const TD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+const TDF = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+const ICON = {
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>'
+};
+const ico = k => '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
 
 // subs: { taskId: Set(เลขที่ที่ส่งแล้ว) }, claims: { เลขที่: uid }
 const S = { className: 'ม.4/2', roster: [], tasks: [], subs: {}, claims: {}, loaded: { cls: false, tasks: false }, error: '' };
@@ -133,10 +142,9 @@ const rosterText = r => r.map(s => s.no + ' ' + s.name + (s.nick ? ' (' + s.nick
 function render() {
   if ((ui.editing || ui.rosterEdit || ui.auth) && document.querySelector('form.edit')) return;
   const focused = document.activeElement && document.activeElement.id;
-  let h = '<div class="wrap"><header><div class="brand"><h1>Class<span>Task</span></h1>' +
-    '<div class="cls">' + esc(S.className) + (S.roster.length ? ' · ' + S.roster.length + ' คน' : '') + '</div></div>' +
-    '<div class="mode">' + authHtml() + '</div>' +
-    '<nav>' + tab('tasks', 'งาน') + tab('cal', 'ปฏิทิน') + tab('roster', 'รายชื่อ') + '</nav></header><main>';
+  let h = '<div class="wrap"><header><div class="brand"><div class="logo"><div class="logo-mark">' + ico('check') + '</div><div><h1>Class<span>Task</span></h1>' +
+    '<div class="cls">' + esc(S.className) + (S.roster.length ? ' · ' + S.roster.length + ' คน' : '') + '</div></div></div>' +
+    '<div class="mode">' + authHtml() + '</div></div></header><main>';
   if (!configured) h += '<div class="setup"><b>ยังไม่ได้ใส่ค่า Firebase</b><p>เปิดไฟล์ <code>firebase-config.js</code> แล้ววางค่า config</p></div>';
   else if (S.error && !S.loaded.tasks) h += '<div class="empty">' + esc(S.error) + '</div>';
   else if (!S.loaded.tasks || !S.loaded.cls) h += '<p class="loading">กำลังโหลดข้อมูลห้อง…</p>';
@@ -147,10 +155,12 @@ function render() {
     else h += viewTasks();
   }
   h += '</main></div>';
+  h += '<nav class="dock" aria-label="เมนูหลัก">' + tab('tasks', 'งาน', 'list') + tab('cal', 'ปฏิทิน', 'cal') + tab('roster', 'รายชื่อ', 'users') +
+    (canEdit ? '<button class="add" data-act="new" aria-label="เพิ่มงาน">' + ico('plus') + '</button>' : '') + '</nav>';
   root.innerHTML = h;
   if (focused) { const el = document.getElementById(focused); if (el) el.focus(); }
 }
-const tab = (k, l) => '<button data-act="view" data-v="' + k + '" aria-current="' + (ui.view === k) + '">' + l + '</button>';
+const tab = (k, l, ic) => '<button data-act="view" data-v="' + k + '" aria-current="' + (ui.view === k) + '" aria-label="' + l + '">' + ico(ic) + '<span class="lbl">' + l + '</span></button>';
 function authHtml() {
   if (!configured) return 'ยังไม่ได้เชื่อม Firebase';
   if (!user) {
@@ -168,8 +178,8 @@ function authHtml() {
     return '<span class="auth">เข้าสู่ระบบเพื่อกดส่งงานของตัวเอง <button class="btn small primary" data-act="login">เข้าสู่ระบบ</button><button class="btn small" data-act="signup">สมัคร</button></span>';
   }
   const me = myNo != null && stu(myNo);
-  const who = me ? 'เลขที่ ' + myNo + ' ' + esc(me.nick || me.name) : esc(user.email);
-  return '<span class="auth">' + (canEdit ? '<b>โหมดแก้ไข</b> ' : '') + who + ' <button class="btn small" data-act="logout">ออกจากระบบ</button></span>';
+  const who = me ? esc(me.nick || me.name) : esc(user.email);
+  return '<span class="auth">' + (canEdit ? '<b>โหมดแก้ไข</b>' : '') + '<span class="me">' + (myNo != null ? '<span class="avatar">' + myNo + '</span>' : '') + who + '</span><button class="btn small" data-act="logout">ออกจากระบบ</button></span>';
 }
 function claimHtml() {
   if (!user || myNo != null || !S.roster.length) return '';
@@ -187,19 +197,33 @@ function claimHtml() {
     '</select><button class="btn primary" data-act="claimnext">ต่อไป</button></div></div>';
 }
 
+function heroHtml(pending) {
+  const student = myNo != null;
+  const next = pending.filter(t => daysLeft(t) >= 0 && (!student || !iSent(t)))[0];
+  if (!next) return '<div class="hero calm"><div class="hero-k">งานถัดไป</div><p class="hero-title" style="cursor:default">' + (student ? 'ไม่มีงานที่คุณต้องส่ง' : 'ไม่มีงานค้างในช่วงนี้') + '</p></div>';
+  const n = daysLeft(next), d = pd(next.due), st = status(next);
+  let h = '<div class="hero"><div class="hero-top"><span class="hero-k">งานถัดไป' + (student ? 'ของฉัน' : 'ของห้อง') + '</span><span class="pill p-' + st.k + '">' + st.label + '</span></div>' +
+    '<button class="hero-title" data-act="open" data-id="' + next.id + '">' + esc(next.title) + '</button>' +
+    '<div class="hero-meta"><div><div class="hero-sub">' + esc(next.subject) + '</div><div class="hero-date">' + TD[d.getDay()] + ' ' + d.getDate() + ' ' + TM[d.getMonth()] + '</div></div>' +
+    '<div class="count">' + (n === 0 ? '<span class="n" style="font-size:30px">วันนี้</span>' : '<span class="n">' + n + '</span><span class="u">วัน</span>') + '</div></div>';
+  if (student) h += '<button class="btn primary" data-act="mine" data-id="' + next.id + '">' + ico('check') + 'ฉันส่งงานนี้แล้ว</button>';
+  return h + '</div>';
+}
 function viewTasks() {
   const all = sorted(), pending = all.filter(t => !isDone(t));
-  let h;
+  const td = new Date();
+  let h = '<div class="today-h"><div class="big">' + TDF[td.getDay()] + ' ' + td.getDate() + '</div><div class="t-sub">' + TMF[td.getMonth()] + ' ' + (td.getFullYear() + 543) + '</div></div>';
+  if (S.tasks.length) h += heroHtml(pending);
   if (myNo != null && !canEdit) {
     const mine = pending.filter(t => !iSent(t));
     const late = mine.filter(t => daysLeft(t) < 0).length;
-    h = '<div class="summary"><div class="stat"><div class="n">' + mine.length + '</div><div class="l">งานที่ฉันยังไม่ส่ง</div></div>' +
+    h += '<div class="summary"><div class="stat"><div class="n">' + mine.length + '</div><div class="l">งานที่ฉันยังไม่ส่ง</div></div>' +
       '<div class="stat soon"><div class="n">' + mine.filter(t => { const n = daysLeft(t); return n >= 0 && n <= 7; }).length + '</div><div class="l">ต้องส่งภายใน 7 วัน</div></div>' +
       '<div class="stat late"><div class="n">' + late + '</div><div class="l">เลยกำหนด</div></div></div>';
   } else {
     const late = pending.filter(t => daysLeft(t) < 0).length;
     const week = pending.filter(t => { const n = daysLeft(t); return n >= 0 && n <= 7; }).length;
-    h = '<div class="summary"><div class="stat"><div class="n">' + pending.length + '</div><div class="l">งานที่ยังไม่ปิด</div></div>' +
+    h += '<div class="summary"><div class="stat"><div class="n">' + pending.length + '</div><div class="l">งานที่ยังไม่ปิด</div></div>' +
       '<div class="stat soon"><div class="n">' + week + '</div><div class="l">ต้องส่งภายใน 7 วัน</div></div>' +
       '<div class="stat late"><div class="n">' + late + '</div><div class="l">เลยกำหนด</div></div></div>';
   }
@@ -212,7 +236,7 @@ function viewTasks() {
   const up = list.filter(t => !isDone(t) && daysLeft(t) >= 0);
   const lt = list.filter(t => !isDone(t) && daysLeft(t) < 0);
   const dn = list.filter(isDone);
-  if (lt.length) h += '<div class="group-h">เลยกำหนด</div><div class="list">' + lt.map(taskHtml).join('') + '</div>';
+  if (lt.length) h += '<div class="group-h late">เลยกำหนด</div><div class="list">' + lt.map(taskHtml).join('') + '</div>';
   h += '<div class="group-h">กำลังจะถึง</div>' + (up.length ? '<div class="list">' + up.map(taskHtml).join('') + '</div>' : '<div class="empty">ไม่มีงานค้างในช่วงนี้</div>');
   if (dn.length) h += '<div class="group-h">ส่งครบแล้ว (' + dn.length + ')</div>' + (ui.showPast ? '<div class="list">' + dn.map(taskHtml).join('') + '</div>' : '<button class="btn small" data-act="past">แสดงงานที่ส่งครบแล้ว</button>');
   return h;
@@ -226,7 +250,7 @@ function taskHtml(t) {
     : '<span class="pill p-' + st.k + '">' + st.label + '</span>';
   let h = '<div class="task"><button class="task-row" data-act="open" data-id="' + t.id + '" aria-expanded="' + open + '">' +
     '<div class="date"><div class="d">' + d.getDate() + '</div><div class="m">' + TD[d.getDay()] + ' ' + TM[d.getMonth()] + '</div></div>' +
-    '<div class="t-main"><div class="t-sub">' + esc(t.subject) + (n ? ' · ส่งแล้ว ' + c + '/' + n : '') + '</div><div class="t-title">' + esc(t.title) + '</div>' +
+    '<div class="t-main"><div class="t-sub"><span class="sj">' + esc(t.subject) + '</span>' + (n ? ' · ส่งแล้ว ' + c + '/' + n : '') + '</div><div class="t-title">' + esc(t.title) + '</div>' +
     (n ? '<div class="bar"><i style="width:' + Math.min(100, Math.round(c / n * 100)) + '%"></i></div>' : '') + '</div>' + pill + '</button>';
   if (open) h += detailHtml(t);
   return h + '</div>';
@@ -274,7 +298,7 @@ function viewCal() {
   const t0 = today(); if (!ui.month) ui.month = new Date(t0.getFullYear(), t0.getMonth(), 1);
   const m = ui.month, first = new Date(m.getFullYear(), m.getMonth(), 1), start = new Date(first); start.setDate(1 - first.getDay());
   const byDay = {}; S.tasks.forEach(t => { (byDay[t.due] = byDay[t.due] || []).push(t); });
-  let h = '<div class="cal-head"><button class="btn small" data-act="mon" data-v="-1" aria-label="เดือนก่อน">‹</button><h2>' + TMF[m.getMonth()] + ' ' + (m.getFullYear() + 543) + '</h2><button class="btn small" data-act="mon" data-v="1" aria-label="เดือนถัดไป">›</button></div><div class="cal">';
+  let h = '<div class="cal-head"><button class="btn small" data-act="mon" data-v="-1" aria-label="เดือนก่อน">‹</button><h2>' + TMF[m.getMonth()] + ' ' + (m.getFullYear() + 543) + '</h2><button class="btn small" data-act="mon" data-v="1" aria-label="เดือนถัดไป">›</button></div><div class="cal-wrap"><div class="cal">';
   TD.forEach(d => { h += '<div class="dow">' + d + '</div>'; });
   for (let i = 0; i < 42; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i); const k = ymd(d), ts = byDay[k] || [];
@@ -283,7 +307,7 @@ function viewCal() {
       ts.map(t => '<span class="ev ' + evClass(t) + '">' + esc(t.subject) + '</span>').join('') +
       (ts.length ? '<span class="dots">' + ts.map(t => '<span class="dot ' + evClass(t) + '"></span>').join('') + '</span>' : '') + '</button>';
   }
-  h += '</div>';
+  h += '</div></div>';
   if (ui.sel) { const sd = pd(ui.sel), list = byDay[ui.sel] || []; h += '<div class="group-h">' + TD[sd.getDay()] + ' ' + sd.getDate() + ' ' + TMF[sd.getMonth()] + '</div>' + (list.length ? '<div class="list">' + list.map(taskHtml).join('') + '</div>' : '<div class="empty">ไม่มีงานส่งวันนี้</div>'); }
   else h += '<p class="t-sub" style="margin-top:12px">แตะวันที่เพื่อดูงานที่ต้องส่งวันนั้น</p>';
   return h;
@@ -363,7 +387,7 @@ document.addEventListener('click', ev => {
     case 'filter': ui.filter = v; break;
     case 'open': ui.open = ui.open === id ? null : id; ui.confirmDel = null; remember(); break;
     case 'past': ui.showPast = true; break;
-    case 'new': ui.editing = 'new'; break;
+    case 'new': ui.view = 'tasks'; ui.editing = 'new'; remember(); forceRender(); { const f = document.querySelector('form.edit'); if (f) f.scrollIntoView({ block: 'center' }); } return;
     case 'edit': ui.editing = id; break;
     case 'cancel': ui.editing = null; break;
     case 'askdel': ui.confirmDel = id; break;
