@@ -5,7 +5,7 @@
   --accent:#5f8445; --accent-strong:#456331; --accent-soft:#e2ead3; --on-accent:#ffffff;
   --pink:#c9848c; --pink-soft:#f5e3e2;
   --late:#a84a35; --late-soft:#f3ddd5; --soon:#a8721c; --soon-soft:#f5e7cc; --done:#456331; --done-soft:#e2ead3;
-  --blob1:rgba(95,132,69,.68); --blob2:rgba(201,132,140,.70); --blob3:rgba(166,192,138,.75); --blob4:rgba(222,170,175,.75);
+  --blob1:rgba(95,132,69,.85); --blob2:rgba(201,132,140,.85); --blob3:rgba(166,192,138,.75); --blob4:rgba(222,170,175,.75);
   --f-display:"Anuphan","IBM Plex Sans Thai",system-ui,sans-serif;
   --f-body:"Anuphan","IBM Plex Sans Thai",system-ui,sans-serif;
   --blur:blur(10px) saturate(130%); --ind:rgba(42,42,36,.08);
@@ -33,6 +33,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15
 .bg{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
 /* same four circles as the Figma background: sizes, places and softness match design B */
 .bg i{position:absolute;border-radius:50%;filter:blur(32px)}
+.bg i:nth-child(1),.bg i:nth-child(2){filter:blur(16px)}
 .bg i:nth-child(1){width:340px;height:340px;left:-160px;top:-200px;background:var(--blob1)}
 .bg i:nth-child(2){width:300px;height:300px;left:54%;top:160px;background:var(--blob2)}
 .bg i:nth-child(3){width:360px;height:360px;left:-60px;top:420px;background:var(--blob3)}
@@ -218,3 +219,6 @@ tr:last-child td{border-bottom:0}
 .pill{display:inline-flex;align-items:center;gap:4px;flex:none}
 .pill svg{width:13px;height:13px;stroke:currentColor}
 .p-wait{background:rgba(110,100,75,.12);color:var(--muted)}
+
+/* keep the date line readable over the green circle */
+.today-h .t-sub{color:var(--fg);opacity:.78;font-weight:500}
