@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js";
+import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js?v=2";
 import { DEFAULT_ROSTER } from "./roster-default.js";
 
 const TM = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -160,8 +160,21 @@ function render() {
   }
   h += '</main></div>';
   root.innerHTML = h;
+  pageAnim();
   updateDock();
   if (focused) { const el = document.getElementById(focused); if (el) el.focus(); }
+}
+let shownView = null;
+const ORDER = ['tasks', 'cal', 'roster'];
+function pageAnim() {
+  if (shownView === ui.view) return;
+  const main = root.querySelector('main');
+  if (main && shownView) {
+    const dir = ORDER.indexOf(ui.view) > ORDER.indexOf(shownView) ? 'from-right' : 'from-left';
+    main.classList.add('page-in', dir);
+    window.scrollTo(0, 0);
+  }
+  shownView = ui.view;
 }
 /* dock lives outside #root so the sliding pill can animate between tabs */
 let dockEl = null;
@@ -189,22 +202,33 @@ function moveInd(btn, pressed) {
   ind.style.transform = 'translateX(' + btn.offsetLeft + 'px)' + (pressed ? ' scale(1.1)' : '');
 }
 function bindDock() {
-  let down = false;
-  const tabAt = x => [...dockEl.querySelectorAll('.tab')].find(b => { const r = b.getBoundingClientRect(); return x >= r.left && x <= r.right; });
-  dockEl.addEventListener('pointerdown', e => {
-    if (e.button > 0) return;
-    down = true; dockEl.classList.add('press');
-    try { dockEl.setPointerCapture(e.pointerId); } catch (err) {}
-    moveInd(tabAt(e.clientX), true);
-  });
-  dockEl.addEventListener('pointermove', e => { if (down) { const b = tabAt(e.clientX); if (b) moveInd(b, true); } });
-  const end = (e, go) => {
-    if (!down) return; down = false; dockEl.classList.remove('press');
-    const b = go && tabAt(e.clientX);
-    if (b) b.click(); else updateDock();
+  // Taps use the buttons' own click. A drag moves the pill with the finger and switches on release.
+  let down = false, moved = false, startX = 0, lastX = 0, swallow = false;
+  const tabs = () => [...dockEl.querySelectorAll('.tab')];
+  const nearest = x => tabs().reduce((best, b) => { const r = b.getBoundingClientRect(), d = Math.abs(x - (r.left + r.width / 2)); return !best || d < best.d ? { b, d } : best; }, null).b;
+  const follow = x => {
+    const ind = dockEl.querySelector('.dock-ind'), r = dockEl.getBoundingClientRect(), w = tabs()[0].offsetWidth;
+    const left = Math.max(6, Math.min(r.width - 6 - w, x - r.left - w / 2));
+    ind.style.opacity = '1'; ind.style.width = w + 'px'; ind.style.transform = 'translateX(' + left + 'px) scale(1.1)';
   };
-  dockEl.addEventListener('pointerup', e => end(e, true));
-  dockEl.addEventListener('pointercancel', e => end(e, false));
+  const start = x => { down = true; moved = false; startX = lastX = x; dockEl.classList.add('press'); moveInd(nearest(x), true); };
+  const move = x => { if (!down) return; lastX = x; if (Math.abs(x - startX) > 8) { moved = true; dockEl.classList.add('drag'); } if (moved) follow(x); };
+  const finish = commit => {
+    if (!down) return; down = false; dockEl.classList.remove('press', 'drag');
+    if (moved && commit !== false) { swallow = true; setTimeout(() => { swallow = false; }, 400); nearest(lastX).click(); }
+    else updateDock();
+  };
+  // touch events: reliable on iPhone/iPad and let us stop the page from scrolling while dragging the bar
+  dockEl.addEventListener('touchstart', e => start(e.touches[0].clientX), { passive: true });
+  dockEl.addEventListener('touchmove', e => { e.preventDefault(); move(e.touches[0].clientX); }, { passive: false });
+  dockEl.addEventListener('touchend', () => finish(true));
+  dockEl.addEventListener('touchcancel', () => finish(moved));
+  // mouse (computer)
+  dockEl.addEventListener('mousedown', e => { if (e.button === 0) start(e.clientX); });
+  window.addEventListener('mousemove', e => move(e.clientX));
+  window.addEventListener('mouseup', () => finish(true));
+  // a drag already switched tabs; ignore the click the browser sends afterwards
+  dockEl.addEventListener('click', e => { if (swallow && e.isTrusted) { e.stopPropagation(); e.preventDefault(); } }, true);
   window.addEventListener('resize', () => updateDock());
 }
 const isDark = () => document.documentElement.dataset.theme === 'dark';

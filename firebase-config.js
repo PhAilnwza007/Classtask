@@ -12,4 +12,4 @@ export const firebaseConfig = {
 export const CLASS_ID = "m4-2";
 
 // อีเมลที่แก้ไขงานได้ ต้องตรงกับใน firestore.rules ด้วย
-export const EDITORS = ["krtn762@gmail.com"];
+export const EDITORS = ["krtn762@gmail.com", "newtang2021@gmail.com"];
