@@ -461,7 +461,7 @@ function bkkKeys(ms) {
   return { day: k(t), week: k(new Date(t.getTime() - dow * 864e5)), month: t.getUTCFullYear() * 100 + t.getUTCMonth() + 1 };
 }
 const fmtMin = sec => { const m = Math.floor(sec / 60), h = Math.floor(m / 60); return h ? h + ' ชม. ' + (m % 60) + ' น.' : m + ' นาที'; };
-const fmtClock = sec => { sec = Math.max(0, Math.floor(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+const fmtClock = sec => { sec = Math.max(0, Math.floor(sec + 0.001)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
 const fRef = no => P('focus', String(no));
 const running = () => ft.me && ft.me.state === 'running';
 const runSec = () => running() && ft.me.clientStart ? (Date.now() - ft.me.clientStart) / 1000 : 0;
@@ -511,7 +511,7 @@ async function focusStop(claim, extraCut) {
   ft.busy = true; stopTimers();
   const f = ft.me, started = f.startedAt && f.startedAt.toMillis ? f.startedAt.toMillis() : Date.now();
   const beat = f.beat && f.beat.toMillis ? f.beat.toMillis() : started;
-  let sec = Math.floor((Date.now() - (f.clientStart || started)) / 1000) - 3;
+  let sec = Math.round((Date.now() - (f.clientStart || started)) / 1000) - 1;
   sec = Math.min(sec, Math.floor((beat - started) / 1000) + 140) - (extraCut || 0);
   const k = bkkKeys(), day = f.dayKey === k.day ? f.daySec || 0 : 0;
   sec = Math.max(0, Math.min(sec, FT_CAP - day));
@@ -543,32 +543,34 @@ async function focusStop(claim, extraCut) {
 
 /* ---- focus session (full screen): one session grows one tree ---- */
 const PAUSE_MAX = 10 * 60;
-function sessionSec() { const S2 = ft.session; return S2 ? S2.credited + (S2.phase === 'focus' && running() && ft.mine ? runSec() : 0) : 0; }
+// time shown on screen: counted on this device and frozen the instant pause/stop is pressed
+function sessionSec() { const S2 = ft.session; return S2 ? S2.shown + (S2.segStart ? (Date.now() - S2.segStart) / 1000 : 0) : 0; }
+function freeze(S2) { if (S2.segStart) { S2.shown += (Date.now() - S2.segStart) / 1000; S2.segStart = 0; } }
 const goalSecOf = S2 => (S2.goal || OPEN_GOAL) * 60;
 async function sessionStart() {
   if (ft.session && ft.session.phase === 'focus') return;
-  ft.session = { subject: ft.subject || 'อ่านทั่วไป', goal: ft.goal, credited: 0, phase: 'starting', pauseUntil: 0, tree: false, chimed: false };
+  ft.session = { subject: ft.subject || 'อ่านทั่วไป', goal: ft.goal, credited: 0, shown: 0, segStart: 0, phase: 'starting', pauseUntil: 0, tree: false, chimed: false };
   render();
   if (!(await focusStart(true))) { ft.session = null; render(); return; }
-  ft.session.phase = 'focus'; wake(true); resumeSound(); render();
+  ft.session.phase = 'focus'; ft.session.segStart = Date.now(); wake(true); resumeSound(); render();
 }
 async function sessionPause() {
   const S2 = ft.session; if (!S2 || S2.phase !== 'focus') return;
-  S2.phase = 'saving'; render();
+  freeze(S2); S2.phase = 'saving'; render();
   S2.credited += (await focusStop(false)).sec;
   S2.phase = 'paused'; S2.pauseUntil = Date.now() + PAUSE_MAX * 1000; pauseSound(); wake(false); startPauseTick(); render();
 }
 async function sessionResume() {
   const S2 = ft.session; if (!S2 || S2.phase !== 'paused') return;
   S2.phase = 'starting'; render();
-  if (await focusStart(false)) { S2.phase = 'focus'; wake(true); resumeSound(); }
+  if (await focusStart(false)) { S2.phase = 'focus'; S2.segStart = Date.now(); wake(true); resumeSound(); }
   else S2.phase = 'paused';
   render();
 }
 // kind: 'done' (finished or stopped) or 'withered' (left the page: time counts, no tree)
 async function sessionEnd(kind) {
   const S2 = ft.session; if (!S2 || S2.phase === 'done' || S2.phase === 'withered') return;
-  const was = S2.phase; S2.phase = 'saving';
+  freeze(S2); const was = S2.phase; S2.phase = 'saving';
   const claim = kind !== 'withered';
   if (was === 'focus' || was === 'starting') { const r = await focusStop(claim); S2.credited += r.sec; S2.tree = r.tree; }
   else if (claim && ft.me && !ft.me.sesDone && (ft.me.sesSec || 0) >= (ft.me.goal || 1800) - 30) {
@@ -653,13 +655,13 @@ function startTimers() {
   ft.tickT = setInterval(() => {
     const S2 = ft.session; if (!S2) return;
     const t = sessionSec(), g = goalSecOf(S2), el = document.getElementById('ft-clock');
-    if (el) el.textContent = S2.goal ? fmtClock(Math.max(0, g - t)) : fmtClock(t);
+    if (el) el.textContent = S2.goal ? fmtClock(Math.max(0, Math.ceil(g - t - 0.001))) : fmtClock(t);
     const st = stageOf(t / g), img = document.querySelector('.focus-island .tree-img');
     if (img && img.dataset.st !== String(st)) render();
     if (S2.phase === 'focus' && S2.goal && t >= g) sessionEnd('done');
     else if (S2.phase === 'focus' && !S2.goal && t >= g && !S2.chimed) { S2.chimed = true; chime(); toast('ได้ต้นไม้แล้ว อ่านต่อได้ หรือกดหยุดเพื่อปลูกลงป่า'); }
     if (running() && dayTotalLive() >= FT_CAP) sessionEnd('done');
-  }, 1000);
+  }, 250);
   ft.beatT = setInterval(() => { if (running() && ft.mine && !document.hidden) updateDoc(fRef(myNo), { beat: serverTimestamp() }).catch(() => { ft.mine = false; stopTimers(); render(); }); }, BEAT_MS);
 }
 function stopTimers() { clearInterval(ft.tickT); clearInterval(ft.beatT); ft.tickT = ft.beatT = null; }
@@ -751,7 +753,7 @@ function forestBg() {
 function focusOverlay() {
   const S2 = ft.session; if (!S2) return '';
   const ph = S2.phase, done = ph === 'done' || ph === 'withered', g = goalSecOf(S2), t = sessionSec();
-  const st = done ? (S2.tree ? FULL : stageOf(S2.credited / g)) : stageOf(t / g);
+  const st = done ? (S2.tree ? FULL : stageOf(S2.shown / g)) : stageOf(t / g);
   let h = '<div class="focus' + (ph === 'withered' ? ' withered' : '') + (ph === 'paused' ? ' paused' : '') + '" role="dialog" aria-modal="true" aria-label="โหมดโฟกัส">' +
     '<div class="focus-rays" aria-hidden="true"></div>' + forestBg() +
     '<div class="focus-top"><div class="focus-subj"><i></i>' + esc(S2.subject) + '</div><div class="t-sub">' + (done ? 'รอบนี้' : (S2.goal ? 'ตั้งไว้ ' + S2.goal + ' นาที' : 'จับเวลาไม่จำกัด')) + '</div></div>' +
@@ -763,10 +765,10 @@ function focusOverlay() {
     else if (S2.tree) msg = 'ปลูกต้นไม้สำเร็จ ได้ต้นไม้เข้าป่า 1 ต้น';
     else msg = 'ยังไม่ครบ ' + (S2.goal || OPEN_GOAL) + ' นาที ต้นไม้เลยยังไม่เข้าป่า<br>แต่เวลาที่อ่านยังนับให้';
     h += '<div class="focus-msg">' + msg + '</div>' +
-      '<div class="focus-got">' + ico('clock') + fmtClock(S2.credited) + '</div>' +
+      '<div class="focus-got">' + ico('clock') + fmtClock(S2.shown) + '</div>' +
       '<button class="focus-home" data-act="ft-close">กลับสู่หน้าหลัก</button>';
   } else {
-    h += '<div class="focus-clock" id="ft-clock">' + (S2.goal ? fmtClock(Math.max(0, g - t)) : fmtClock(t)) + '</div>';
+    h += '<div class="focus-clock" id="ft-clock">' + (S2.goal ? fmtClock(Math.max(0, Math.ceil(g - t - 0.001))) : fmtClock(t)) + '</div>';
     if (ph === 'paused') h += '<div class="focus-msg">พักอยู่ · เหลือเวลาพัก <b id="ft-pause">' + fmtClock((S2.pauseUntil - Date.now()) / 1000) + '</b></div>';
     else h += '<div class="focus-msg dim">' + (ph === 'focus' ? 'อย่าสลับแอปหรือปิดหน้าเว็บ' : 'กำลังบันทึก…') + '</div>';
     h += '<div class="focus-btns"><button class="fb" data-act="ft-end" aria-label="หยุดอ่าน"' + (ph === 'saving' || ph === 'starting' ? ' disabled' : '') + '>' + ico('stop') + '</button>' +
