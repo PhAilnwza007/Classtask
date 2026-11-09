@@ -106,10 +106,9 @@ function msgFor(e) {
 function status(t) {
   if (isDone(t)) return { k: 'done', label: 'ส่งครบแล้ว' };
   const n = daysLeft(t);
-  if (n < 0) return { k: 'late', label: 'เลยกำหนด ' + (-n) + ' วัน' };
-  if (n === 0) return { k: 'today', label: 'ส่งวันนี้' };
-  if (n === 1) return { k: 'soon', label: 'ส่งพรุ่งนี้' };
-  if (n <= 3) return { k: 'soon', label: 'อีก ' + n + ' วัน' };
+  if (n < 0) return { k: 'late', label: 'เลยกำหนด' };
+  if (n === 0) return { k: 'today', label: 'ใกล้กำหนด' };
+  if (n <= 3) return { k: 'soon', label: 'ใกล้กำหนด' };
   return { k: 'wait', label: 'อีก ' + n + ' วัน' };
 }
 const evClass = t => { const k = status(t).k; return k === 'today' ? 'e-soon' : 'e-' + k; };
@@ -264,7 +263,7 @@ function heroHtml(pending) {
   const next = pending.filter(t => daysLeft(t) >= 0 && (!student || !iSent(t)))[0];
   if (!next) return '<div class="hero calm"><div class="hero-k">งานถัดไป</div><p class="hero-title" style="cursor:default">' + (student ? 'ไม่มีงานที่คุณต้องส่ง' : 'ไม่มีงานค้างในช่วงนี้') + '</p></div>';
   const n = daysLeft(next), d = pd(next.due), st = status(next);
-  let h = '<div class="hero"><div class="hero-top"><span class="hero-k">งานถัดไป' + (student ? 'ของฉัน' : 'ของห้อง') + '</span>' + pillHtml(next) + '</div>' +
+  let h = '<div class="hero"><div class="hero-top"><span class="hero-k">งานถัดไป</span>' + pillHtml(next) + '</div>' +
     '<button class="hero-title" data-act="open" data-id="' + next.id + '">' + esc(next.title) + '</button>' +
     '<div class="hero-meta"><div><div class="hero-sub">' + esc(next.subject) + '</div><div class="hero-date">' + TD[d.getDay()] + ' ' + d.getDate() + ' ' + TM[d.getMonth()] + '</div></div>' +
     '<div class="count">' + (n === 0 ? '<span class="n" style="font-size:30px">วันนี้</span>' : '<span class="n">' + n + '</span><span class="u">วัน</span>') + '</div></div>';
@@ -298,16 +297,17 @@ function viewTasks() {
   const up = list.filter(t => !isDone(t) && daysLeft(t) >= 0);
   const lt = list.filter(t => !isDone(t) && daysLeft(t) < 0);
   const dn = list.filter(isDone);
-  if (lt.length) h += '<div class="group-h late">เลยกำหนด</div><div class="list">' + lt.map(taskHtml).join('') + '</div>';
-  h += '<div class="group-h">กำลังจะถึง</div>' + (up.length ? '<div class="list">' + up.map(taskHtml).join('') + '</div>' : '<div class="empty">ไม่มีงานค้างในช่วงนี้</div>');
+  const open = lt.concat(up);
+  h += open.length ? '<div class="list">' + open.map(taskHtml).join('') + '</div>' : '<div class="empty">ไม่มีงานค้างในช่วงนี้</div>';
   if (dn.length) h += '<div class="group-h">ส่งครบแล้ว (' + dn.length + ')</div>' + (ui.showPast ? '<div class="list">' + dn.map(taskHtml).join('') + '</div>' : '<button class="btn small" data-act="past">แสดงงานที่ส่งครบแล้ว</button>');
   return h;
 }
 function pillHtml(t) {
   const st = status(t);
-  if (myNo != null && !isDone(t) && iSent(t)) return '<span class="pill p-done">' + ico('check') + 'ฉันส่งแล้ว</span>';
+  if (myNo != null && !isDone(t) && iSent(t)) return '<span class="pill p-done">' + ico('check') + 'ส่งแล้ว</span>';
   const ic = st.k === 'done' ? ico('check') : (st.k === 'wait' ? '' : ico('clock'));
-  return '<span class="pill p-' + st.k + '">' + ic + st.label + '</span>';
+  const label = st.k === 'wait' && myNo != null ? 'ยังไม่ส่ง' : st.label;
+  return '<span class="pill p-' + st.k + '">' + ic + label + '</span>';
 }
 function taskHtml(t) {
   if (ui.editing === t.id) return formHtml(t);

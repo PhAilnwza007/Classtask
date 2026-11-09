@@ -5,10 +5,10 @@
   --accent:#5f8445; --accent-strong:#456331; --accent-soft:#e2ead3; --on-accent:#ffffff;
   --pink:#c9848c; --pink-soft:#f5e3e2;
   --late:#a84a35; --late-soft:#f3ddd5; --soon:#a8721c; --soon-soft:#f5e7cc; --done:#456331; --done-soft:#e2ead3;
-  --blob1:rgba(95,132,69,.42); --blob2:rgba(201,132,140,.40); --blob3:rgba(226,234,211,.95); --blob4:rgba(245,227,226,.95);
+  --blob1:rgba(95,132,69,.40); --blob2:rgba(201,132,140,.45); --blob3:rgba(226,234,211,.90); --blob4:rgba(245,227,226,.90);
   --f-display:"Anuphan","IBM Plex Sans Thai",system-ui,sans-serif;
   --f-body:"Anuphan","IBM Plex Sans Thai",system-ui,sans-serif;
-  --blur:blur(16px) saturate(140%); --ind:rgba(42,42,36,.08);
+  --blur:blur(10px) saturate(130%); --ind:rgba(42,42,36,.08);
 }
 /* light by default (design B); dark when the viewer turns it on with the header toggle */
 :root{color-scheme:light}
@@ -31,11 +31,12 @@ body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15
 
 /* background color field (editable: move/recolor the four blobs) */
 .bg{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
-.bg i{position:absolute;border-radius:50%;filter:blur(70px)}
-.bg i:nth-child(1){width:380px;height:380px;left:-140px;top:-160px;background:var(--blob1)}
-.bg i:nth-child(2){width:320px;height:320px;right:-120px;top:22vh;background:var(--blob2)}
-.bg i:nth-child(3){width:420px;height:420px;left:-80px;top:52vh;background:var(--blob3)}
-.bg i:nth-child(4){width:360px;height:360px;right:-90px;bottom:-120px;background:var(--blob4)}
+/* same four circles as the Figma background: sizes, places and softness match design B */
+.bg i{position:absolute;border-radius:50%;filter:blur(45px)}
+.bg i:nth-child(1){width:340px;height:340px;left:-160px;top:-200px;background:var(--blob1)}
+.bg i:nth-child(2){width:300px;height:300px;left:54%;top:160px;background:var(--blob2)}
+.bg i:nth-child(3){width:360px;height:360px;left:-60px;top:420px;background:var(--blob3)}
+.bg i:nth-child(4){width:320px;height:320px;left:46%;top:620px;background:var(--blob4)}
 #root{position:relative;z-index:1}
 
 /* shared glass surface */
