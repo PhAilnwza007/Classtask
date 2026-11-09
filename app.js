@@ -1,8 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js?v=2";
 import { DEFAULT_ROSTER } from "./roster-default.js";
+import { TREE_IMG } from "./trees.js?v=1";
 
 const TM = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const TMF = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
@@ -18,6 +19,12 @@ const ICON = {
   clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
+  sprout: '<path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>',
+  play: '<path d="M7 4.5v15l12.5-7.5z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  sound: '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
+  mute: '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>'
 };
 const ico = k => '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
@@ -71,7 +78,8 @@ if (configured) {
     user = u; myNo = null;
     canEdit = !!(u && u.email && EDITORS.includes(u.email.toLowerCase()));
     if (unsubMe) { unsubMe(); unsubMe = null; }
-    if (u) unsubMe = onSnapshot(P('users', u.uid), s => { myNo = s.exists() ? s.data().no : null; render(); }, () => {});
+    if (u) unsubMe = onSnapshot(P('users', u.uid), s => { myNo = s.exists() ? s.data().no : null; watchFocus(); render(); }, () => {});
+    else watchFocus();
     render();
   });
 }
@@ -156,16 +164,19 @@ function render() {
     h += claimHtml();
     if (ui.view === 'cal') h += viewCal();
     else if (ui.view === 'roster') h += viewRoster();
+    else if (ui.view === 'tree') h += viewTree();
     else h += viewTasks();
   }
   h += '</main></div>';
+  h += focusOverlay();
+  document.body.classList.toggle('focus-on', !!ft.session);
   root.innerHTML = h;
   pageAnim();
   updateDock();
   if (focused) { const el = document.getElementById(focused); if (el) el.focus(); }
 }
 let shownView = null;
-const ORDER = ['tasks', 'cal', 'roster'];
+const ORDER = ['tasks', 'cal', 'tree', 'roster'];
 function pageAnim() {
   if (shownView === ui.view) return;
   const main = root.querySelector('main');
@@ -183,7 +194,7 @@ function updateDock() {
     dockEl = document.createElement('nav'); dockEl.className = 'dock'; dockEl.setAttribute('aria-label', 'เมนูหลัก');
     document.body.appendChild(dockEl); bindDock();
   }
-  const tabs = [['tasks', 'งาน', 'list'], ['cal', 'ปฏิทิน', 'cal'], ['roster', 'รายชื่อ', 'users']];
+  const tabs = [['tasks', 'งาน', 'list'], ['cal', 'ปฏิทิน', 'cal'], ['tree', 'Focus Tree', 'sprout'], ['roster', 'รายชื่อ', 'users']];
   const key = tabs.map(t => t[0]).join() + (canEdit ? ',new' : '');
   if (dockEl.dataset.key !== key) {
     dockEl.innerHTML = '<span class="dock-ind" aria-hidden="true"></span>' +
@@ -427,6 +438,311 @@ function viewRoster() {
   return h + '</tbody></table></div>';
 }
 
+/* ================= Focus Tree =================
+   Reading time grows a tree. The server (Firestore rules) checks every number:
+   - one session per student (one doc per class number, state running/idle)
+   - credited seconds can't exceed server-measured time, nor the last heartbeat + 150 s
+     (so time while the page was closed or the phone was locked is not counted)
+   - day / week / month buckets use Bangkok dates computed by the server, 6 h cap per day
+   - every session is written to an append-only log */
+const FT_CAP = 6 * 3600, FT_TREE = 300, BEAT_MS = 60000;
+const FT_STAGES = [[0, 'เริ่มปลูก'], [25, 'เมล็ดเริ่มงอก'], [50, 'ต้นกล้า'], [100, 'ต้นไม้เติบโต'], [200, 'ต้นไม้สมบูรณ์']];
+const FT_KINDS = [
+  { name: 'ต้นไม้ป่า', img: 'forest' }, { name: 'ต้นซากุระ', img: 'sakura' }, { name: 'ต้นแสงทอง', img: 'gold' },
+  { name: 'ต้นสายธาร', img: 'water' }, { name: 'ต้นเมเปิล', img: 'maple' }, { name: 'ต้นจันทรา', img: 'moon' }
+];
+const ft = { me: null, mine: false, list: [], loaded: false, range: 'day', log: {}, logOpen: null, busy: false, unsub: null, watchedNo: null, beatT: null, tickT: null, listT: null };
+function bkkKeys(ms) {
+  const t = new Date((ms || Date.now()) + 7 * 3600e3);
+  const k = d => d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+  const dow = (t.getUTCDay() + 6) % 7; // Monday = 0
+  return { day: k(t), week: k(new Date(t.getTime() - dow * 864e5)), month: t.getUTCFullYear() * 100 + t.getUTCMonth() + 1 };
+}
+const fmtMin = sec => { const m = Math.floor(sec / 60), h = Math.floor(m / 60); return h ? h + ' ชม. ' + (m % 60) + ' น.' : m + ' นาที'; };
+const fmtClock = sec => { sec = Math.max(0, Math.floor(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+const fRef = no => P('focus', String(no));
+const running = () => ft.me && ft.me.state === 'running';
+const runSec = () => running() && ft.me.clientStart ? (Date.now() - ft.me.clientStart) / 1000 : 0;
+function bucket(d, range, k) {
+  if (!d) return 0;
+  if (range === 'day') return d.dayKey === k.day ? d.daySec || 0 : 0;
+  if (range === 'week') return d.weekKey === k.week ? d.weekSec || 0 : 0;
+  if (range === 'month') return d.monthKey === k.month ? d.monthSec || 0 : 0;
+  return d.totalSec || 0;
+}
+function watchFocus() {
+  if (!configured) return;
+  const no = user && myNo != null ? myNo : null;
+  if (ft.watchedNo === no) return;
+  if (ft.unsub) { ft.unsub(); ft.unsub = null; }
+  ft.watchedNo = no; ft.me = null; ft.mine = false;
+  if (no == null) return;
+  let first = true;
+  ft.unsub = onSnapshot(fRef(no), snap => {
+    ft.me = snap.exists() ? snap.data() : null;
+    // a session left running by a closed page or another device: close it (the server only credits up to its last heartbeat)
+    if (first && running() && !ft.mine) focusStop();
+    first = false;
+    if (ui.view === 'tree') render();
+  }, () => {});
+}
+// one server "segment" = the time between start and stop/pause; a focus session can hold several segments
+async function focusStart() {
+  if (ft.busy || myNo == null) return false;
+  const k = bkkKeys();
+  if (ft.me && ft.me.dayKey === k.day && (ft.me.daySec || 0) >= FT_CAP) { toast('วันนี้อ่านครบ 6 ชั่วโมงแล้ว พักบ้างนะ'); return false; }
+  ft.busy = true;
+  try {
+    const now = serverTimestamp(), base = { state: 'running', startedAt: now, beat: now, clientStart: Date.now(), uid: user.uid };
+    if (ft.me) await updateDoc(fRef(myNo), base);
+    else await setDoc(fRef(myNo), { ...base, no: myNo, totalSec: 0, daySec: 0, dayKey: 0, weekSec: 0, weekKey: 0, monthSec: 0, monthKey: 0, lastSec: 0, lastLog: '' });
+    ft.mine = true; startTimers(); return true;
+  } catch (e) { toast(msgFor(e)); return false; }
+  finally { ft.busy = false; }
+}
+async function focusStop(extraCut) {
+  if (!running() || myNo == null) return 0;
+  if (ft.busy && !extraCut) return 0;
+  ft.busy = true; stopTimers();
+  const f = ft.me, started = f.startedAt && f.startedAt.toMillis ? f.startedAt.toMillis() : Date.now();
+  const beat = f.beat && f.beat.toMillis ? f.beat.toMillis() : started;
+  let sec = Math.floor((Date.now() - (f.clientStart || started)) / 1000) - 3;
+  sec = Math.min(sec, Math.floor((beat - started) / 1000) + 140) - (extraCut || 0);
+  const k = bkkKeys(), day = f.dayKey === k.day ? f.daySec || 0 : 0;
+  sec = Math.max(0, Math.min(sec, FT_CAP - day));
+  const logRef = doc(collection(db, 'classes', CLASS_ID, 'focus', String(myNo), 'log'));
+  const b = writeBatch(db);
+  b.update(fRef(myNo), {
+    state: 'idle', lastSec: sec, lastLog: logRef.id, dayKey: k.day, weekKey: k.week, monthKey: k.month,
+    totalSec: (f.totalSec || 0) + sec, daySec: day + sec,
+    weekSec: (f.weekKey === k.week ? f.weekSec || 0 : 0) + sec, monthSec: (f.monthKey === k.month ? f.monthSec || 0 : 0) + sec
+  });
+  b.set(logRef, { uid: user.uid, start: f.startedAt, end: serverTimestamp(), sec, dayKey: k.day, subject: String((ft.session && ft.session.subject) || 'อ่านทั่วไป').slice(0, 40) });
+  try {
+    await b.commit();
+    ft.mine = false; ft.busy = false;
+    loadRanking(); delete ft.log[myNo];
+    return sec;
+  } catch (e) {
+    // clocks between devices can differ; retry with a smaller claim, then with zero
+    if (!extraCut) return focusStop(120);
+    if (extraCut < 1e9) return focusStop(1e9);
+    ft.busy = false; toast(msgFor(e)); return 0;
+  }
+}
+
+/* ---- focus session (full screen) ---- */
+const PAUSE_MAX = 10 * 60;
+function sessionSec() { const S2 = ft.session; return S2 ? S2.credited + (S2.phase === 'focus' && running() && ft.mine ? runSec() : 0) : 0; }
+async function sessionStart() {
+  if (ft.session && ft.session.phase === 'focus') return;
+  const subject = ft.subject || 'อ่านทั่วไป';
+  ft.session = { subject, credited: 0, phase: 'starting', pauseUntil: 0 };
+  render();
+  if (!(await focusStart())) { ft.session = null; render(); return; }
+  ft.session.phase = 'focus'; wake(true); resumeSound(); render();
+}
+async function sessionPause() {
+  const S2 = ft.session; if (!S2 || S2.phase !== 'focus') return;
+  S2.phase = 'saving'; render();
+  S2.credited += await focusStop();
+  S2.phase = 'paused'; S2.pauseUntil = Date.now() + PAUSE_MAX * 1000; pauseSound(); wake(false); startPauseTick(); render();
+}
+async function sessionResume() {
+  const S2 = ft.session; if (!S2 || S2.phase !== 'paused') return;
+  S2.phase = 'starting'; render();
+  if (await focusStart()) { S2.phase = 'focus'; wake(true); resumeSound(); }
+  else S2.phase = 'paused';
+  render();
+}
+async function sessionEnd(kind) {
+  const S2 = ft.session; if (!S2 || S2.phase === 'done' || S2.phase === 'withered') return;
+  const was = S2.phase; S2.phase = 'saving';
+  if (was === 'focus' || was === 'starting') S2.credited += await focusStop();
+  S2.phase = kind; stopSound(); wake(false); clearInterval(ft.pauseT);
+  if (dayTotalLive() >= FT_CAP) toast('ครบ 6 ชั่วโมงของวันนี้แล้ว');
+  render();
+}
+function startPauseTick() {
+  clearInterval(ft.pauseT);
+  ft.pauseT = setInterval(() => {
+    const S2 = ft.session; if (!S2 || S2.phase !== 'paused') return clearInterval(ft.pauseT);
+    const left = (S2.pauseUntil - Date.now()) / 1000, el = document.getElementById('ft-pause');
+    if (el) el.textContent = fmtClock(Math.max(0, left));
+    if (left <= 0) { toast('พักเกิน 10 นาที จบเซสชันให้แล้ว'); sessionEnd('done'); }
+  }, 1000);
+}
+// keep the screen awake while focusing (iOS 16.4+ and most Android browsers)
+async function wake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !ft.wl) { ft.wl = await navigator.wakeLock.request('screen'); ft.wl.addEventListener('release', () => { ft.wl = null; }); }
+    if (!on && ft.wl) { await ft.wl.release(); ft.wl = null; }
+  } catch (e) { ft.wl = null; }
+}
+
+/* ---- ambient sounds, made in the browser (no audio files) ---- */
+const SOUNDS = [['off', 'ปิดเสียง'], ['rain', 'ฝนตก'], ['stream', 'ลำธาร'], ['wind', 'ลมในป่า'], ['soft', 'เสียงนุ่มสำหรับอ่าน']];
+const SND = { ctx: null, nodes: [], kind: 'off', open: false };
+try { SND.kind = localStorage.getItem('ct-sound') || 'off'; } catch (e) {}
+function noiseBuf(ctx, type) {
+  const len = ctx.sampleRate * 4, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  let b0 = 0, b1 = 0, b2 = 0, last = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    if (type === 'brown') { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+    else if (type === 'pink') { b0 = 0.99765 * b0 + w * 0.099; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0526; d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.25; }
+    else d[i] = w * 0.5;
+  }
+  return buf;
+}
+function playSound(kind) {
+  stopSound(); SND.kind = kind; try { localStorage.setItem('ct-sound', kind); } catch (e) {}
+  if (kind === 'off') return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    const ctx = SND.ctx || (SND.ctx = new AC()); ctx.resume();
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf(ctx, kind === 'rain' ? 'white' : kind === 'soft' ? 'pink' : 'brown'); src.loop = true;
+    const f = ctx.createBiquadFilter(), g = ctx.createGain(); g.gain.value = 0;
+    const lfo = ctx.createOscillator(), lg = ctx.createGain();
+    if (kind === 'rain') { f.type = 'bandpass'; f.frequency.value = 1400; f.Q.value = 0.4; lfo.frequency.value = 0.3; lg.gain.value = 300; lg.connect(f.frequency); }
+    if (kind === 'stream') { f.type = 'bandpass'; f.frequency.value = 700; f.Q.value = 0.8; lfo.frequency.value = 0.15; lg.gain.value = 0.08; lg.connect(g.gain); }
+    if (kind === 'wind') { f.type = 'lowpass'; f.frequency.value = 500; lfo.frequency.value = 0.07; lg.gain.value = 280; lg.connect(f.frequency); }
+    if (kind === 'soft') { f.type = 'lowpass'; f.frequency.value = 1800; lfo.frequency.value = 0.05; lg.gain.value = 0.03; lg.connect(g.gain); }
+    lfo.connect(lg); src.connect(f); f.connect(g); g.connect(ctx.destination);
+    const vol = kind === 'rain' ? 0.16 : kind === 'soft' ? 0.22 : 0.3;
+    g.gain.linearRampToValueAtTime(vol, ctx.currentTime + 1.5);
+    src.start(); lfo.start(); SND.nodes = [src, lfo, g];
+  } catch (e) {}
+}
+function stopSound() { SND.nodes.forEach(n => { try { n.stop ? n.stop() : n.disconnect(); } catch (e) {} }); SND.nodes = []; }
+function pauseSound() { stopSound(); }
+function resumeSound() { if (SND.kind !== 'off' && !SND.nodes.length) playSound(SND.kind); }
+
+function startTimers() {
+  stopTimers();
+  ft.tickT = setInterval(() => { const el = document.getElementById('ft-clock'); if (el) el.textContent = fmtClock(sessionSec()); if (running() && dayTotalLive() >= FT_CAP) sessionEnd('done'); }, 1000);
+  ft.beatT = setInterval(() => { if (running() && ft.mine && !document.hidden) updateDoc(fRef(myNo), { beat: serverTimestamp() }).catch(() => { ft.mine = false; stopTimers(); render(); }); }, BEAT_MS);
+}
+function stopTimers() { clearInterval(ft.tickT); clearInterval(ft.beatT); ft.tickT = ft.beatT = null; }
+function dayTotalLive() { const k = bkkKeys(); return (ft.me && ft.me.dayKey === k.day ? ft.me.daySec || 0 : 0) + runSec(); }
+// leaving the page while focusing: the tree withers, but the time already read still counts
+const leave = () => { if (ft.session && ft.session.phase === 'focus') sessionEnd('withered'); };
+document.addEventListener('visibilitychange', () => { if (document.hidden) leave(); else if (ft.session && ft.session.phase === 'focus') wake(true); });
+window.addEventListener('pagehide', leave);
+async function loadRanking() {
+  if (!configured) return;
+  try { const snap = await getDocs(collection(db, 'classes', CLASS_ID, 'focus')); ft.list = snap.docs.map(d => d.data()); ft.loaded = true; }
+  catch (e) { ft.loaded = true; }
+  if (ui.view === 'tree') render();
+}
+async function loadLog(no) {
+  try {
+    const snap = await getDocs(query(collection(db, 'classes', CLASS_ID, 'focus', String(no), 'log'), orderBy('end', 'desc'), limit(15)));
+    ft.log[no] = snap.docs.map(d => d.data());
+  } catch (e) { ft.log[no] = 'err'; }
+  if (ui.view === 'tree') render();
+}
+// growth stages 0–3 share one look; the mature tree (stage 4) shows this tree's kind
+function treeSvg(totalSec, size, forceStage) {
+  const min = totalSec / 60, kind = FT_KINDS[Math.floor(min / FT_TREE) % FT_KINDS.length], m = min % FT_TREE;
+  const st = forceStage != null ? forceStage : FT_STAGES.filter(x => m >= x[0]).length - 1;
+  const src = TREE_IMG[st < 4 ? 'stage' + st : kind.img];
+  return '<img class="tree-img" src="' + src + '" width="' + size + '" height="' + size + '" alt="' + FT_STAGES[st][1] + (st === 4 ? ' (' + kind.name + ')' : '') + '" decoding="async">';
+}
+function viewTree() {
+  if (!ft.loaded) { ft.loaded = 'loading'; loadRanking(); }
+  clearInterval(ft.listT); ft.listT = setInterval(() => { if (ui.view === 'tree' && !document.hidden) loadRanking(); else clearInterval(ft.listT); }, 60000);
+  const k = bkkKeys();
+  const total = (ft.me ? ft.me.totalSec || 0 : 0) + runSec();
+  const min = total / 60, inTree = min % FT_TREE, trees = Math.floor(min / FT_TREE), kind = FT_KINDS[trees % FT_KINDS.length];
+  const stIdx = FT_STAGES.filter(x => inTree >= x[0]).length - 1, next = FT_STAGES[stIdx + 1];
+  const nextTxt = next ? 'อีก ' + Math.ceil(next[0] - inTree) + ' นาที → ' + next[1] : 'อีก ' + Math.ceil(FT_TREE - inTree) + ' นาที ปลดล็อกต้นไม้ต้นใหม่';
+  const today = dayTotalLive();
+  let h = '<div class="sec-h" style="margin-top:14px"><h2>Focus Tree</h2><span>อ่านแล้วต้นไม้โต</span></div>';
+  h += '<div class="hero ft-card">';
+  if (!user) h += '<p class="hero-title" style="cursor:default">เข้าสู่ระบบเพื่อเริ่มจับเวลาอ่านหนังสือ</p><button class="btn primary" data-act="login">เข้าสู่ระบบ</button>';
+  else if (myNo == null) h += '<p class="hero-title" style="cursor:default">ผูกเลขที่ของคุณก่อน แล้วค่อยเริ่มจับเวลา</p><p class="t-sub">ดูที่ด้านบนของหน้างาน หรือแท็บรายชื่อ</p>';
+  else {
+    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(total, 150) + '</div><div class="ft-info"><div class="hero-k">' + esc(kind.name) + ' ต้นที่ ' + (trees + 1) + '</div>' +
+      '<div class="ft-stage">' + FT_STAGES[stIdx][1] + '</div><div class="t-sub">' + nextTxt + '</div>' +
+      '<div class="ft-bar"><i style="width:' + Math.min(100, inTree / FT_TREE * 100) + '%"></i></div></div></div>';
+    const subs = [...new Set(subjects().concat(['อ่านทั่วไป']))];
+    if (!ft.subject || !subs.includes(ft.subject)) ft.subject = subs[0];
+    h += '<div><div class="hero-k" style="margin-bottom:8px">วันนี้จะอ่านวิชาอะไร</div><div class="chips ft-subj">' +
+      subs.map(x => '<button class="chip" data-act="ft-subj" data-v="' + esc(x) + '" aria-pressed="' + (ft.subject === x) + '">' + esc(x) + '</button>').join('') + '</div></div>';
+    h += '<button class="btn primary ft-btn" data-act="ft-start"' + (today >= FT_CAP ? ' disabled' : '') + '>' + ico('play') + (today >= FT_CAP ? 'ครบ 6 ชั่วโมงของวันนี้แล้ว' : 'เริ่มโฟกัส') + '</button>' +
+      '<p class="t-sub ft-note">ระหว่างโฟกัสห้ามสลับแอปหรือปิดหน้าเว็บ ไม่อย่างนั้นต้นไม้จะเหี่ยว</p>';
+    h += '<div class="ft-today"><span>วันนี้ ' + fmtMin(today) + '</span><span>สูงสุด 6 ชม.</span></div><div class="ft-bar thin"><i style="width:' + Math.min(100, today / FT_CAP * 100) + '%"></i></div>';
+  }
+  h += '</div>';
+  if (user && myNo != null && trees > 0) {
+    h += '<div class="group-h">ป่าของฉัน · ' + trees + ' ต้น</div><div class="forest">';
+    for (let i = 0; i < Math.min(trees, 24); i++) h += '<span class="forest-t">' + treeSvg((i * FT_TREE + 250) * 60, 56, 4) + '</span>';
+    h += (trees > 24 ? '<span class="t-sub">+' + (trees - 24) + '</span>' : '') + '</div>';
+  }
+  // ranking
+  const ranges = [['day', 'วันนี้'], ['week', 'สัปดาห์นี้'], ['month', 'เดือนนี้']];
+  h += '<div class="sec-h"><h2>อันดับห้อง</h2><span>' + (ft.loaded === true ? 'อัปเดตทุก 1 นาที' : 'กำลังโหลด…') + '</span></div>';
+  h += '<div class="seg" role="tablist">' + ranges.map(r => '<button role="tab" data-act="ft-range" data-v="' + r[0] + '" aria-selected="' + (ft.range === r[0]) + '">' + r[1] + '</button>').join('') + '</div>';
+  const rows = ft.list.map(d => {
+    const live = myNo != null && d.no === myNo && ft.me ? { ...ft.me, no: myNo } : d;
+    const sec = bucket(live, ft.range, k) + (live.no === myNo ? runSec() : 0);
+    return { no: d.no, sec, trees: Math.floor(((live.totalSec || 0) + (live.no === myNo ? runSec() : 0)) / 60 / FT_TREE), reading: live.state === 'running' };
+  }).filter(r => r.sec >= 60).sort((a, b) => b.sec - a.sec);
+  if (!rows.length) h += '<div class="empty">ยังไม่มีใครอ่าน' + (ft.range === 'day' ? 'วันนี้' : ft.range === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้') + ' เริ่มเป็นคนแรกเลย</div>';
+  else {
+    h += '<div class="rank">';
+    rows.forEach((r, i) => {
+      const s = stu(r.no), me = r.no === myNo;
+      h += '<div class="rank-row' + (me ? ' me' : '') + '"><span class="rk' + (i < 3 ? ' top' : '') + '">' + (i + 1) + '</span><span class="avatar sm">' + r.no + '</span>' +
+        '<span class="rk-name">' + esc(s ? s.nick || s.name : 'เลขที่ ' + r.no) + (me ? ' <small>(ฉัน)</small>' : '') + (r.reading ? ' <span class="live">กำลังอ่าน</span>' : '') + '</span>' +
+        '<span class="rk-trees" title="ต้นไม้ที่ปลูกได้">' + ico('sprout') + r.trees + '</span><span class="rk-time">' + fmtMin(r.sec) + '</span>' +
+        (canEdit || me ? '<button class="btn small" data-act="ft-log" data-no="' + r.no + '" aria-expanded="' + (ft.logOpen === r.no) + '">ประวัติ</button>' : '') + '</div>';
+      if (ft.logOpen === r.no) h += logHtml(r.no);
+    });
+    h += '</div>';
+  }
+  if (myNo != null && !rows.some(r => r.no === myNo)) h += '<p class="t-sub" style="margin-top:10px"><button class="btn small" data-act="ft-log" data-no="' + myNo + '">ประวัติการอ่านของฉัน</button></p>' + (ft.logOpen === myNo ? logHtml(myNo) : '');
+  return h;
+}
+function focusOverlay() {
+  const S2 = ft.session; if (!S2) return '';
+  const total = (ft.me ? ft.me.totalSec || 0 : 0) + (S2.phase === 'focus' && running() && ft.mine ? runSec() : 0);
+  const img = treeSvg(total, 320), ph = S2.phase;
+  const done = ph === 'done' || ph === 'withered';
+  let h = '<div class="focus' + (ph === 'withered' ? ' withered' : '') + (ph === 'paused' ? ' paused' : '') + '" role="dialog" aria-modal="true" aria-label="โหมดโฟกัส">' +
+    '<div class="focus-rays" aria-hidden="true"></div>' +
+    '<div class="focus-top"><div class="focus-subj"><i></i>' + esc(S2.subject) + '</div><div class="t-sub">' + (done ? 'เซสชันนี้' : 'ตอนนี้ฉันกำลังโฟกัสกับ…') + '</div></div>' +
+    (done ? '' : '<button class="focus-sound" data-act="ft-sound" aria-label="เสียงบรรยากาศ" aria-expanded="' + SND.open + '">' + ico(SND.kind === 'off' ? 'mute' : 'sound') + '</button>') +
+    '<div class="focus-island">' + img + '</div>';
+  if (done) {
+    h += '<div class="focus-msg">' + (ph === 'withered' ? 'ออกจากหน้าเว็บระหว่างโฟกัส ต้นไม้เลยเหี่ยว<br>ไม่เป็นไร ครั้งหน้าจะดีขึ้น' : (S2.credited >= 60 ? 'เยี่ยมมาก ต้นไม้ของคุณโตขึ้นแล้ว' : 'สั้นไปนิด ยังไม่ถึง 1 นาที')) + '</div>' +
+      '<div class="focus-got">' + ico('clock') + fmtClock(S2.credited) + (ph === 'withered' && S2.credited >= 60 ? ' <small>ยังนับเวลาให้</small>' : '') + '</div>' +
+      '<button class="focus-home" data-act="ft-close">กลับสู่หน้าหลัก</button>';
+  } else {
+    h += '<div class="focus-clock" id="ft-clock">' + fmtClock(sessionSec()) + '</div>';
+    if (ph === 'paused') h += '<div class="focus-msg">พักอยู่ · เหลือเวลาพัก <b id="ft-pause">' + fmtClock((S2.pauseUntil - Date.now()) / 1000) + '</b></div>';
+    else h += '<div class="focus-msg dim">' + (ph === 'focus' ? 'อย่าสลับแอปหรือปิดหน้าเว็บ' : 'กำลังบันทึก…') + '</div>';
+    h += '<div class="focus-btns"><button class="fb" data-act="ft-end" aria-label="จบการอ่าน"' + (ph === 'saving' || ph === 'starting' ? ' disabled' : '') + '>' + ico('stop') + '</button>' +
+      (ph === 'paused'
+        ? '<button class="fb main" data-act="ft-resume" aria-label="อ่านต่อ">' + ico('play') + '</button>'
+        : '<button class="fb main" data-act="ft-pause" aria-label="หยุดพัก"' + (ph !== 'focus' ? ' disabled' : '') + '>' + ico('pause') + '</button>') + '</div>';
+  }
+  if (SND.open && !done) h += '<div class="focus-sheet" role="menu">' + SOUNDS.map(([k, l]) => '<button role="menuitemradio" aria-checked="' + (SND.kind === k) + '" data-act="ft-snd" data-v="' + k + '"><i></i>' + l + '</button>').join('') + '<p>เสียงสร้างจากเว็บ ไม่ต้องโหลดไฟล์</p></div>';
+  return h + '</div>';
+}
+function logHtml(no) {
+  const L = ft.log[no];
+  if (!L) return '<div class="log t-sub">กำลังโหลดประวัติ…</div>';
+  if (L === 'err') return '<div class="log t-sub">โหลดประวัติไม่ได้ (ต้องเข้าสู่ระบบ)</div>';
+  if (!L.length) return '<div class="log t-sub">ยังไม่มีประวัติ</div>';
+  return '<div class="log">' + L.map(x => {
+    const a = x.start && x.start.toDate ? x.start.toDate() : null, e = x.end && x.end.toDate ? x.end.toDate() : null;
+    const t = d => d ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '–';
+    return '<div class="log-row"><span>' + (e ? TD[e.getDay()] + ' ' + e.getDate() + ' ' + TM[e.getMonth()] : '') + '</span><span>' + t(a) + '–' + t(e) + '</span><span class="log-subj">' + esc(x.subject || '') + '</span><b>' + fmtMin(x.sec || 0) + '</b></div>';
+  }).join('') + '</div>';
+}
+
 let toastT;
 function toast(msg) {
   let el = document.querySelector('.toast');
@@ -453,6 +769,16 @@ document.addEventListener('click', ev => {
     }
     case 'menu': ui.menu = !ui.menu; break;
     case 'theme': setTheme(!isDark()); break;
+    case 'ft-start': sessionStart(); return;
+    case 'ft-pause': sessionPause(); return;
+    case 'ft-resume': sessionResume(); return;
+    case 'ft-end': sessionEnd('done'); return;
+    case 'ft-close': ft.session = null; SND.open = false; break;
+    case 'ft-subj': ft.subject = v; break;
+    case 'ft-sound': SND.open = !SND.open; break;
+    case 'ft-snd': SND.open = false; playSound(v); if (!ft.session || ft.session.phase !== 'focus') stopSound(); break;
+    case 'ft-range': ft.range = v; break;
+    case 'ft-log': ft.logOpen = ft.logOpen === +b.dataset.no ? null : +b.dataset.no; if (ft.logOpen != null) loadLog(ft.logOpen); break;
     case 'logout': ui.menu = false; signOut(auth); ui.claimOpen = false; return;
     case 'claimopen': ui.claimOpen = true; break;
     case 'claimnext': if (!ui.claimPick) { toast('เลือกเลขที่ก่อน'); return; } ui.claimConfirm = true; break;
