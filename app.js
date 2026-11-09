@@ -480,65 +480,87 @@ function watchFocus() {
   ft.watchedNo = no; ft.me = null; ft.mine = false;
   if (no == null) return;
   let first = true;
-  ft.unsub = onSnapshot(fRef(no), snap => {
+  ft.unsub = onSnapshot(fRef(no), { includeMetadataChanges: true }, snap => {
     ft.me = snap.exists() ? snap.data() : null;
+    if (!snap.metadata || !snap.metadata.hasPendingWrites) ft.server = ft.me;
     // a session left running by a closed page or another device: close it (the server only credits up to its last heartbeat)
-    if (first && running() && !ft.mine) focusStop(false);
+    if (first && running() && !ft.mine && !ft.session) focusStop(false);
     first = false;
     if (ui.view === 'tree') render();
   }, () => {});
 }
 // one server "segment" = the time between start and stop/pause; a focus session can hold several segments
+// server copy of my focus doc, ignoring this device's not-yet-saved writes
+// (a rejected save first shows locally as "idle" and then flips back, which used to confuse pause/resume)
+ft.server = null;
+const serverRunning = () => ft.server && ft.server.state === 'running';
+function waitServer(test, ms) {
+  return new Promise(res => {
+    const t0 = Date.now();
+    const loop = () => { if (test()) return res(true); if (Date.now() - t0 > ms) return res(false); setTimeout(loop, 100); };
+    loop();
+  });
+}
 async function focusStart(fresh) {
   if (ft.busy || myNo == null) return false;
   const k = bkkKeys();
   if (ft.me && ft.me.dayKey === k.day && (ft.me.daySec || 0) >= FT_CAP) { toast('วันนี้อ่านครบ 6 ชั่วโมงแล้ว พักบ้างนะ'); return false; }
   ft.busy = true;
   try {
+    // a segment still open on the server (an earlier stop that failed): close it first, credit nothing
+    if (serverRunning()) await closeSegment(false, true);
     const now = serverTimestamp(), base = { state: 'running', startedAt: now, beat: now, clientStart: Date.now(), uid: user.uid };
     const goalSec = (ft.session.goal || OPEN_GOAL) * 60;
     if (fresh) Object.assign(base, { sesSec: 0, goal: goalSec, sesDone: false });
-    if (ft.me) await updateDoc(fRef(myNo), base);
+    if (ft.server || ft.me) await updateDoc(fRef(myNo), base);
     else await setDoc(fRef(myNo), { ...base, sesSec: 0, goal: goalSec, sesDone: false, trees: 0, no: myNo, totalSec: 0, daySec: 0, dayKey: 0, weekSec: 0, weekKey: 0, monthSec: 0, monthKey: 0, lastSec: 0, lastLog: '' });
+    // the save is confirmed now; the server's start time is no later than this moment,
+    // so time measured from here can never be more than the server measures
+    ft.ackAt = Date.now();
     ft.mine = true; startTimers(); return true;
   } catch (e) { toast(msgFor(e)); return false; }
   finally { ft.busy = false; }
 }
-// ends the running segment; claim = this stop finishes the session and may plant the tree
-async function focusStop(claim, extraCut) {
-  if (!running() || myNo == null) return { sec: 0, tree: false };
-  if (ft.busy && !extraCut) return { sec: 0, tree: false };
-  ft.busy = true; stopTimers();
-  const f = ft.me, started = f.startedAt && f.startedAt.toMillis ? f.startedAt.toMillis() : Date.now();
-  const beat = f.beat && f.beat.toMillis ? f.beat.toMillis() : started;
-  let sec = Math.round((Date.now() - (f.clientStart || started)) / 1000) - 1;
-  sec = Math.min(sec, Math.floor((beat - started) / 1000) + 140) - (extraCut || 0);
-  const k = bkkKeys(), day = f.dayKey === k.day ? f.daySec || 0 : 0;
-  sec = Math.max(0, Math.min(sec, FT_CAP - day));
-  const ses = (f.sesSec || 0) + sec, goal = f.goal || OPEN_GOAL * 60;
-  const tree = !!claim && !f.sesDone && ses >= goal - 30;
-  const logRef = doc(collection(db, 'classes', CLASS_ID, 'focus', String(myNo), 'log'));
-  const b = writeBatch(db);
-  const upd = {
-    state: 'idle', lastSec: sec, lastLog: logRef.id, dayKey: k.day, weekKey: k.week, monthKey: k.month,
-    totalSec: (f.totalSec || 0) + sec, daySec: day + sec,
-    weekSec: (f.weekKey === k.week ? f.weekSec || 0 : 0) + sec, monthSec: (f.monthKey === k.month ? f.monthSec || 0 : 0) + sec,
-    sesSec: ses
-  };
-  if (tree) Object.assign(upd, { trees: (f.trees || 0) + 1, sesDone: true });
-  b.update(fRef(myNo), upd);
-  b.set(logRef, { uid: user.uid, start: f.startedAt, end: serverTimestamp(), sec, dayKey: k.day, subject: String((ft.session && ft.session.subject) || 'อ่านทั่วไป').slice(0, 40) });
-  try {
-    await b.commit();
-    ft.mine = false; ft.busy = false;
-    loadRanking(); delete ft.log[myNo];
-    return { sec, tree };
-  } catch (e) {
-    // clocks between devices can differ; retry with a smaller claim, then with zero
-    if (!extraCut) return focusStop(claim, 120);
-    if (extraCut < 1e9) return focusStop(claim, 1e9);
-    ft.busy = false; toast(msgFor(e)); return { sec: 0, tree: false };
+// ends the running segment. claim = this stop may plant the tree. zero = credit nothing (cleanup)
+async function closeSegment(claim, zero) {
+  await waitServer(() => ft.server && ft.server.startedAt && ft.server.startedAt.toMillis, 4000);
+  const f = ft.server;
+  if (!f || f.state !== 'running' || !f.startedAt || !f.startedAt.toMillis) return { ok: !f || f.state !== 'running', sec: 0, tree: false };
+  const started = f.startedAt.toMillis(), beat = f.beat && f.beat.toMillis ? f.beat.toMillis() : started;
+  let want = zero ? 0 : (ft.ackAt && ft.mine ? Math.floor((Date.now() - ft.ackAt) / 1000) : Math.floor((beat - started) / 1000));
+  // try the measured time first; if the server disagrees, claim a little less, then nothing
+  for (const cut of zero ? [0] : [0, 5, 60, Infinity]) {
+    let sec = Math.max(0, Math.min(want - cut, Math.floor((beat - started) / 1000) + 140));
+    const k = bkkKeys(), day = f.dayKey === k.day ? f.daySec || 0 : 0;
+    sec = Math.max(0, Math.min(sec, FT_CAP - day));
+    const ses = (f.sesSec || 0) + sec, goal = f.goal || OPEN_GOAL * 60;
+    const tree = !!claim && !f.sesDone && ses >= goal - 30;
+    const logRef = doc(collection(db, 'classes', CLASS_ID, 'focus', String(myNo), 'log'));
+    const b = writeBatch(db);
+    const upd = {
+      state: 'idle', lastSec: sec, lastLog: logRef.id, dayKey: k.day, weekKey: k.week, monthKey: k.month,
+      totalSec: (f.totalSec || 0) + sec, daySec: day + sec,
+      weekSec: (f.weekKey === k.week ? f.weekSec || 0 : 0) + sec, monthSec: (f.monthKey === k.month ? f.monthSec || 0 : 0) + sec,
+      sesSec: ses
+    };
+    if (tree) Object.assign(upd, { trees: (f.trees || 0) + 1, sesDone: true });
+    b.update(fRef(myNo), upd);
+    b.set(logRef, { uid: user.uid, start: f.startedAt, end: serverTimestamp(), sec, dayKey: k.day, subject: String((ft.session && ft.session.subject) || 'อ่านทั่วไป').slice(0, 40) });
+    try { await b.commit(); return { ok: true, sec, tree }; }
+    catch (e) { ft.lastErr = e; }
   }
+  return { ok: false, sec: 0, tree: false };
+}
+async function focusStop(claim) {
+  if (myNo == null || ft.busy) return { ok: false, sec: 0, tree: false };
+  if (!serverRunning() && !running()) return { ok: true, sec: 0, tree: false };
+  ft.busy = true; stopTimers();
+  try {
+    const r = await closeSegment(claim, false);
+    if (r.ok) { ft.mine = false; loadRanking(); delete ft.log[myNo]; }
+    else { toast('บันทึกเวลาไม่สำเร็จ ' + msgFor(ft.lastErr || {})); if (ft.mine) startTimers(); }
+    return r;
+  } finally { ft.busy = false; }
 }
 
 /* ---- focus session (full screen): one session grows one tree ---- */
@@ -557,14 +579,16 @@ async function sessionStart() {
 async function sessionPause() {
   const S2 = ft.session; if (!S2 || S2.phase !== 'focus') return;
   freeze(S2); S2.phase = 'saving'; render();
-  S2.credited += (await focusStop(false)).sec;
+  const r = await focusStop(false);
+  if (!r.ok) { S2.phase = 'focus'; S2.segStart = Date.now(); render(); return; } // save failed: keep reading
+  S2.credited += r.sec;
   S2.phase = 'paused'; S2.pauseUntil = Date.now() + PAUSE_MAX * 1000; pauseSound(); wake(false); startPauseTick(); render();
 }
 async function sessionResume() {
   const S2 = ft.session; if (!S2 || S2.phase !== 'paused') return;
   S2.phase = 'starting'; render();
   if (await focusStart(false)) { S2.phase = 'focus'; S2.segStart = Date.now(); wake(true); resumeSound(); }
-  else S2.phase = 'paused';
+  else { S2.phase = 'paused'; toast('อ่านต่อไม่สำเร็จ ลองกดอีกครั้ง'); }
   render();
 }
 // kind: 'done' (finished or stopped) or 'withered' (left the page: time counts, no tree)
