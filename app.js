@@ -3,7 +3,7 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, se
 import { getFirestore, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js?v=2";
 import { DEFAULT_ROSTER } from "./roster-default.js";
-import { TREE_IMG } from "./trees.js?v=1";
+import { TREE_IMG } from "./trees.js?v=2";
 
 const TM = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const TMF = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
@@ -446,11 +446,8 @@ function viewRoster() {
    - day / week / month buckets use Bangkok dates computed by the server, 6 h cap per day
    - every session is written to an append-only log */
 const FT_CAP = 6 * 3600, FT_TREE = 300, BEAT_MS = 60000;
-const FT_STAGES = [[0, 'เริ่มปลูก'], [25, 'เมล็ดเริ่มงอก'], [50, 'ต้นกล้า'], [100, 'ต้นไม้เติบโต'], [200, 'ต้นไม้สมบูรณ์']];
-const FT_KINDS = [
-  { name: 'ต้นไม้ป่า', img: 'forest' }, { name: 'ต้นซากุระ', img: 'sakura' }, { name: 'ต้นแสงทอง', img: 'gold' },
-  { name: 'ต้นสายธาร', img: 'water' }, { name: 'ต้นเมเปิล', img: 'maple' }, { name: 'ต้นจันทรา', img: 'moon' }
-];
+const FT_STAGES = [[0, 'เริ่มปลูก'], [25, 'เมล็ดเริ่มงอก'], [50, 'ต้นกล้า'], [100, 'ต้นไม้เติบโต'], [150, 'ต้นไม้แผ่กิ่ง'], [200, 'ต้นไม้สมบูรณ์']];
+const FT_KINDS = [{ name: 'ต้นไม้', img: 's5' }];
 const ft = { me: null, mine: false, list: [], loaded: false, range: 'day', log: {}, logOpen: null, busy: false, unsub: null, watchedNo: null, beatT: null, tickT: null, listT: null };
 function bkkKeys(ms) {
   const t = new Date((ms || Date.now()) + 7 * 3600e3);
@@ -646,8 +643,8 @@ async function loadLog(no) {
 function treeSvg(totalSec, size, forceStage) {
   const min = totalSec / 60, kind = FT_KINDS[Math.floor(min / FT_TREE) % FT_KINDS.length], m = min % FT_TREE;
   const st = forceStage != null ? forceStage : FT_STAGES.filter(x => m >= x[0]).length - 1;
-  const src = TREE_IMG[st < 4 ? 'stage' + st : kind.img];
-  return '<img class="tree-img" src="' + src + '" width="' + size + '" height="' + size + '" alt="' + FT_STAGES[st][1] + (st === 4 ? ' (' + kind.name + ')' : '') + '" decoding="async">';
+  const src = TREE_IMG['s' + st];
+  return '<img class="tree-img" src="' + src + '" width="' + size + '" height="' + size + '" alt="' + FT_STAGES[st][1] + '' + '" decoding="async">';
 }
 function viewTree() {
   if (!ft.loaded) { ft.loaded = 'loading'; loadRanking(); }
@@ -663,7 +660,7 @@ function viewTree() {
   if (!user) h += '<p class="hero-title" style="cursor:default">เข้าสู่ระบบเพื่อเริ่มจับเวลาอ่านหนังสือ</p><button class="btn primary" data-act="login">เข้าสู่ระบบ</button>';
   else if (myNo == null) h += '<p class="hero-title" style="cursor:default">ผูกเลขที่ของคุณก่อน แล้วค่อยเริ่มจับเวลา</p><p class="t-sub">ดูที่ด้านบนของหน้างาน หรือแท็บรายชื่อ</p>';
   else {
-    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(total, 150) + '</div><div class="ft-info"><div class="hero-k">' + esc(kind.name) + ' ต้นที่ ' + (trees + 1) + '</div>' +
+    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(total, 150) + '</div><div class="ft-info"><div class="hero-k">' + 'ต้นที่ ' + (trees + 1) + '</div>' +
       '<div class="ft-stage">' + FT_STAGES[stIdx][1] + '</div><div class="t-sub">' + nextTxt + '</div>' +
       '<div class="ft-bar"><i style="width:' + Math.min(100, inTree / FT_TREE * 100) + '%"></i></div></div></div>';
     const subs = [...new Set(subjects().concat(['อ่านทั่วไป']))];
@@ -677,7 +674,7 @@ function viewTree() {
   h += '</div>';
   if (user && myNo != null && trees > 0) {
     h += '<div class="group-h">ป่าของฉัน · ' + trees + ' ต้น</div><div class="forest">';
-    for (let i = 0; i < Math.min(trees, 24); i++) h += '<span class="forest-t">' + treeSvg((i * FT_TREE + 250) * 60, 56, 4) + '</span>';
+    for (let i = 0; i < Math.min(trees, 24); i++) h += '<span class="forest-t">' + treeSvg((i * FT_TREE + 250) * 60, 56, 5) + '</span>';
     h += (trees > 24 ? '<span class="t-sub">+' + (trees - 24) + '</span>' : '') + '</div>';
   }
   // ranking
