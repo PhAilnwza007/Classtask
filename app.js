@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js";
 import { DEFAULT_ROSTER } from "./roster-default.js";
@@ -9,7 +9,7 @@ const TMF = ['มกราคม','กุมภาพันธ์','มีนา
 const TD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
 
 const S = { className: 'ม.4/2', roster: [], tasks: [], loaded: { cls: false, tasks: false }, error: '' };
-const ui = { view: 'tasks', open: null, filter: 'all', editing: null, confirmDel: null, month: null, sel: null, showPast: false, rosterEdit: false };
+const ui = { loginOpen: false, view: 'tasks', open: null, filter: 'all', editing: null, confirmDel: null, month: null, sel: null, showPast: false, rosterEdit: false };
 try { const sv = JSON.parse(sessionStorage.getItem('ct-ui') || 'null'); if (sv) { ui.view = sv.view || 'tasks'; ui.open = sv.open || null; } } catch (e) {}
 let user = null, canEdit = false, busy = false;
 
@@ -59,6 +59,9 @@ function msgFor(e) {
   if (c.includes('permission-denied')) return 'บัญชีนี้ไม่มีสิทธิ์แก้ไข ต้องเข้าสู่ระบบด้วยอีเมลที่ตั้งเป็นผู้แก้ไขไว้';
   if (c.includes('unavailable')) return 'ต่อฐานข้อมูลไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่';
   if (c.includes('popup-closed') || c.includes('cancelled-popup')) return 'ปิดหน้าต่างเข้าสู่ระบบก่อนเสร็จ ลองกดเข้าสู่ระบบอีกครั้ง';
+  if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found') || c.includes('invalid-email')) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+  if (c.includes('too-many-requests')) return 'ลองผิดหลายครั้งเกินไป รอสักครู่แล้วลองใหม่';
+  if (c.includes('operation-not-allowed')) return 'ยังไม่ได้เปิด Email/Password ใน Firebase Authentication';
   if (c.includes('unauthorized-domain')) return 'โดเมนนี้ยังไม่ได้เพิ่มใน Firebase Authentication > Settings > Authorized domains';
   return 'เกิดข้อผิดพลาด (' + (c || 'unknown') + ')';
 }
@@ -100,7 +103,7 @@ const rosterText = r => r.map(s => s.no + ' ' + s.name + (s.nick ? ' (' + s.nick
 /* ---------- render ---------- */
 function render() {
   const focused = document.activeElement && document.activeElement.id;
-  if (ui.editing || ui.rosterEdit) { if (document.querySelector('form.edit')) return; }
+  if (ui.editing || ui.rosterEdit || ui.loginOpen) { if (document.querySelector('form.edit')) return; }
   let h = '<div class="wrap"><header><div class="brand"><h1>Class<span>Task</span></h1>' +
     '<div class="cls">' + esc(S.className) + (S.roster.length ? ' · ' + S.roster.length + ' คน' : '') + '</div></div>' +
     '<div class="mode">' + authHtml() + '</div>' +
@@ -118,7 +121,9 @@ function render() {
 const tab = (k, l) => '<button data-act="view" data-v="' + k + '" aria-current="' + (ui.view === k) + '">' + l + '</button>';
 function authHtml() {
   if (!configured) return 'ยังไม่ได้เชื่อม Firebase';
-  if (!user) return '<span class="auth">ดูอย่างเดียว <button class="btn small" data-act="login">เข้าสู่ระบบเพื่อแก้ไข</button></span>';
+  if (!user) return ui.loginOpen
+    ? '<form class="edit" data-id="login" style="margin-top:8px;width:100%"><label>อีเมล<input id="f-email" name="email" type="email" autocomplete="username" required></label><label>รหัสผ่าน<input id="f-pass" name="pass" type="password" autocomplete="current-password" required></label><div class="row-actions full"><button class="btn primary" type="submit">เข้าสู่ระบบ</button><button class="btn" type="button" data-act="logincancel">ยกเลิก</button></div></form>'
+    : '<span class="auth">ดูอย่างเดียว <button class="btn small" data-act="login">เข้าสู่ระบบเพื่อแก้ไข</button></span>';
   if (!canEdit) return '<span class="auth">' + esc(user.email) + ' ไม่มีสิทธิ์แก้ไข <button class="btn small" data-act="logout">ออกจากระบบ</button></span>';
   return '<span class="auth"><b>โหมดแก้ไข</b> แก้แล้วบันทึกทันที <button class="btn small" data-act="logout">ออกจากระบบ</button></span>';
 }
@@ -240,7 +245,8 @@ document.addEventListener('click', ev => {
   const t = id ? S.tasks.find(x => x.id === id) : null;
   const tRef = id ? doc(db, 'classes', CLASS_ID, 'tasks', id) : null;
   switch (a) {
-    case 'login': signInWithPopup(auth, new GoogleAuthProvider()).catch(e => toast(msgFor(e))); return;
+    case 'login': ui.loginOpen = true; break;
+    case 'logincancel': ui.loginOpen = false; break;
     case 'logout': signOut(auth); return;
     case 'view': ui.view = v; ui.editing = null; ui.rosterEdit = false; remember(); break;
     case 'filter': ui.filter = v; break;
@@ -267,6 +273,11 @@ function forceRender() { const f = document.querySelector('form.edit'); if (f) f
 document.addEventListener('submit', ev => {
   ev.preventDefault();
   const f = ev.target, id = f.dataset.id;
+  if (id === 'login') {
+    const email = f.elements.email.value.trim(), pass = f.elements.pass.value;
+    signInWithEmailAndPassword(auth, email, pass).then(() => { ui.loginOpen = false; forceRender(); toast('เข้าสู่ระบบแล้ว'); }, e => toast(msgFor(e)));
+    return;
+  }
   if (id === 'roster') {
     const roster = parseRoster(f.elements.roster.value), cls = f.elements.cls.value.trim() || 'ม.4/2';
     ui.rosterEdit = false; forceRender();
