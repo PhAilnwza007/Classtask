@@ -446,9 +446,12 @@ function viewRoster() {
    - day / week / month buckets use Bangkok dates computed by the server, 6 h cap per day
    - every session is written to an append-only log */
 const FT_CAP = 6 * 3600, FT_TREE = 300, BEAT_MS = 60000;
-const FT_STAGES = [[0, 'เริ่มปลูก'], [25, 'เมล็ดเริ่มงอก'], [50, 'ต้นกล้า'], [100, 'ต้นไม้เติบโต'], [150, 'ต้นไม้แผ่กิ่ง'], [200, 'ต้นไม้สมบูรณ์']];
+// one focus session grows one tree; stages are fractions of the chosen time
+const FT_STAGES = [[0, 'เริ่มปลูก'], [0.08, 'เมล็ดเริ่มงอก'], [0.2, 'ต้นกล้า'], [0.4, 'ต้นไม้เติบโต'], [0.65, 'ต้นไม้แผ่กิ่ง'], [1, 'ต้นไม้สมบูรณ์']];
+const FT_GOALS = [30, 45, 60, 90, 120]; // minutes; 0 = no limit (a tree after 30 minutes)
+const OPEN_GOAL = 30;
 const FT_KINDS = [{ name: 'ต้นไม้', img: 's5' }];
-const ft = { me: null, mine: false, list: [], loaded: false, range: 'day', log: {}, logOpen: null, busy: false, unsub: null, watchedNo: null, beatT: null, tickT: null, listT: null };
+const ft = { goal: 45, me: null, mine: false, list: [], loaded: false, range: 'day', log: {}, logOpen: null, busy: false, unsub: null, watchedNo: null, beatT: null, tickT: null, listT: null };
 function bkkKeys(ms) {
   const t = new Date((ms || Date.now()) + 7 * 3600e3);
   const k = d => d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
@@ -478,28 +481,31 @@ function watchFocus() {
   ft.unsub = onSnapshot(fRef(no), snap => {
     ft.me = snap.exists() ? snap.data() : null;
     // a session left running by a closed page or another device: close it (the server only credits up to its last heartbeat)
-    if (first && running() && !ft.mine) focusStop();
+    if (first && running() && !ft.mine) focusStop(false);
     first = false;
     if (ui.view === 'tree') render();
   }, () => {});
 }
 // one server "segment" = the time between start and stop/pause; a focus session can hold several segments
-async function focusStart() {
+async function focusStart(fresh) {
   if (ft.busy || myNo == null) return false;
   const k = bkkKeys();
   if (ft.me && ft.me.dayKey === k.day && (ft.me.daySec || 0) >= FT_CAP) { toast('วันนี้อ่านครบ 6 ชั่วโมงแล้ว พักบ้างนะ'); return false; }
   ft.busy = true;
   try {
     const now = serverTimestamp(), base = { state: 'running', startedAt: now, beat: now, clientStart: Date.now(), uid: user.uid };
+    const goalSec = (ft.session.goal || OPEN_GOAL) * 60;
+    if (fresh) Object.assign(base, { sesSec: 0, goal: goalSec, sesDone: false });
     if (ft.me) await updateDoc(fRef(myNo), base);
-    else await setDoc(fRef(myNo), { ...base, no: myNo, totalSec: 0, daySec: 0, dayKey: 0, weekSec: 0, weekKey: 0, monthSec: 0, monthKey: 0, lastSec: 0, lastLog: '' });
+    else await setDoc(fRef(myNo), { ...base, sesSec: 0, goal: goalSec, sesDone: false, trees: 0, no: myNo, totalSec: 0, daySec: 0, dayKey: 0, weekSec: 0, weekKey: 0, monthSec: 0, monthKey: 0, lastSec: 0, lastLog: '' });
     ft.mine = true; startTimers(); return true;
   } catch (e) { toast(msgFor(e)); return false; }
   finally { ft.busy = false; }
 }
-async function focusStop(extraCut) {
-  if (!running() || myNo == null) return 0;
-  if (ft.busy && !extraCut) return 0;
+// ends the running segment; claim = this stop finishes the session and may plant the tree
+async function focusStop(claim, extraCut) {
+  if (!running() || myNo == null) return { sec: 0, tree: false };
+  if (ft.busy && !extraCut) return { sec: 0, tree: false };
   ft.busy = true; stopTimers();
   const f = ft.me, started = f.startedAt && f.startedAt.toMillis ? f.startedAt.toMillis() : Date.now();
   const beat = f.beat && f.beat.toMillis ? f.beat.toMillis() : started;
@@ -507,56 +513,68 @@ async function focusStop(extraCut) {
   sec = Math.min(sec, Math.floor((beat - started) / 1000) + 140) - (extraCut || 0);
   const k = bkkKeys(), day = f.dayKey === k.day ? f.daySec || 0 : 0;
   sec = Math.max(0, Math.min(sec, FT_CAP - day));
+  const ses = (f.sesSec || 0) + sec, goal = f.goal || OPEN_GOAL * 60;
+  const tree = !!claim && !f.sesDone && ses >= goal - 30;
   const logRef = doc(collection(db, 'classes', CLASS_ID, 'focus', String(myNo), 'log'));
   const b = writeBatch(db);
-  b.update(fRef(myNo), {
+  const upd = {
     state: 'idle', lastSec: sec, lastLog: logRef.id, dayKey: k.day, weekKey: k.week, monthKey: k.month,
     totalSec: (f.totalSec || 0) + sec, daySec: day + sec,
-    weekSec: (f.weekKey === k.week ? f.weekSec || 0 : 0) + sec, monthSec: (f.monthKey === k.month ? f.monthSec || 0 : 0) + sec
-  });
+    weekSec: (f.weekKey === k.week ? f.weekSec || 0 : 0) + sec, monthSec: (f.monthKey === k.month ? f.monthSec || 0 : 0) + sec,
+    sesSec: ses
+  };
+  if (tree) Object.assign(upd, { trees: (f.trees || 0) + 1, sesDone: true });
+  b.update(fRef(myNo), upd);
   b.set(logRef, { uid: user.uid, start: f.startedAt, end: serverTimestamp(), sec, dayKey: k.day, subject: String((ft.session && ft.session.subject) || 'อ่านทั่วไป').slice(0, 40) });
   try {
     await b.commit();
     ft.mine = false; ft.busy = false;
     loadRanking(); delete ft.log[myNo];
-    return sec;
+    return { sec, tree };
   } catch (e) {
     // clocks between devices can differ; retry with a smaller claim, then with zero
-    if (!extraCut) return focusStop(120);
-    if (extraCut < 1e9) return focusStop(1e9);
-    ft.busy = false; toast(msgFor(e)); return 0;
+    if (!extraCut) return focusStop(claim, 120);
+    if (extraCut < 1e9) return focusStop(claim, 1e9);
+    ft.busy = false; toast(msgFor(e)); return { sec: 0, tree: false };
   }
 }
 
-/* ---- focus session (full screen) ---- */
+/* ---- focus session (full screen): one session grows one tree ---- */
 const PAUSE_MAX = 10 * 60;
 function sessionSec() { const S2 = ft.session; return S2 ? S2.credited + (S2.phase === 'focus' && running() && ft.mine ? runSec() : 0) : 0; }
+const goalSecOf = S2 => (S2.goal || OPEN_GOAL) * 60;
 async function sessionStart() {
   if (ft.session && ft.session.phase === 'focus') return;
-  const subject = ft.subject || 'อ่านทั่วไป';
-  ft.session = { subject, credited: 0, phase: 'starting', pauseUntil: 0 };
+  ft.session = { subject: ft.subject || 'อ่านทั่วไป', goal: ft.goal, credited: 0, phase: 'starting', pauseUntil: 0, tree: false, chimed: false };
   render();
-  if (!(await focusStart())) { ft.session = null; render(); return; }
+  if (!(await focusStart(true))) { ft.session = null; render(); return; }
   ft.session.phase = 'focus'; wake(true); resumeSound(); render();
 }
 async function sessionPause() {
   const S2 = ft.session; if (!S2 || S2.phase !== 'focus') return;
   S2.phase = 'saving'; render();
-  S2.credited += await focusStop();
+  S2.credited += (await focusStop(false)).sec;
   S2.phase = 'paused'; S2.pauseUntil = Date.now() + PAUSE_MAX * 1000; pauseSound(); wake(false); startPauseTick(); render();
 }
 async function sessionResume() {
   const S2 = ft.session; if (!S2 || S2.phase !== 'paused') return;
   S2.phase = 'starting'; render();
-  if (await focusStart()) { S2.phase = 'focus'; wake(true); resumeSound(); }
+  if (await focusStart(false)) { S2.phase = 'focus'; wake(true); resumeSound(); }
   else S2.phase = 'paused';
   render();
 }
+// kind: 'done' (finished or stopped) or 'withered' (left the page: time counts, no tree)
 async function sessionEnd(kind) {
   const S2 = ft.session; if (!S2 || S2.phase === 'done' || S2.phase === 'withered') return;
   const was = S2.phase; S2.phase = 'saving';
-  if (was === 'focus' || was === 'starting') S2.credited += await focusStop();
+  const claim = kind !== 'withered';
+  if (was === 'focus' || was === 'starting') { const r = await focusStop(claim); S2.credited += r.sec; S2.tree = r.tree; }
+  else if (claim && ft.me && !ft.me.sesDone && (ft.me.sesSec || 0) >= (ft.me.goal || 1800) - 30) {
+    // stopped while paused after reaching the goal: plant with a zero-length closing segment
+    if (await focusStart(false)) { const r = await focusStop(true); S2.credited += r.sec; S2.tree = r.tree; }
+  }
   S2.phase = kind; stopSound(); wake(false); clearInterval(ft.pauseT);
+  if (kind === 'done' && S2.tree) chime();
   if (dayTotalLive() >= FT_CAP) toast('ครบ 6 ชั่วโมงของวันนี้แล้ว');
   render();
 }
@@ -569,6 +587,19 @@ function startPauseTick() {
     if (left <= 0) { toast('พักเกิน 10 นาที จบเซสชันให้แล้ว'); sessionEnd('done'); }
   }, 1000);
 }
+// short bell when a tree is planted
+function chime() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    const ctx = SND.ctx || (SND.ctx = new AC()); ctx.resume();
+    [784, 1047, 1319].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.18;
+      o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 1);
+    });
+    if (navigator.vibrate) navigator.vibrate([120, 80, 120]);
+  } catch (e) {}
+}
 // keep the screen awake while focusing (iOS 16.4+ and most Android browsers)
 async function wake(on) {
   try {
@@ -580,7 +611,7 @@ async function wake(on) {
 /* ---- ambient sounds, made in the browser (no audio files) ---- */
 const SOUNDS = [['off', 'ปิดเสียง'], ['rain', 'ฝนตก'], ['stream', 'ลำธาร'], ['wind', 'ลมในป่า'], ['soft', 'เสียงนุ่มสำหรับอ่าน']];
 const SND = { ctx: null, nodes: [], kind: 'off', open: false };
-try { SND.kind = localStorage.getItem('ct-sound') || 'off'; } catch (e) {}
+try { SND.kind = localStorage.getItem('ct-sound') || 'off'; const g = +localStorage.getItem('ct-goal'); if (g === 0 || FT_GOALS.includes(g)) ft.goal = g; } catch (e) {}
 function noiseBuf(ctx, type) {
   const len = ctx.sampleRate * 4, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
   let b0 = 0, b1 = 0, b2 = 0, last = 0;
@@ -617,7 +648,16 @@ function resumeSound() { if (SND.kind !== 'off' && !SND.nodes.length) playSound(
 
 function startTimers() {
   stopTimers();
-  ft.tickT = setInterval(() => { const el = document.getElementById('ft-clock'); if (el) el.textContent = fmtClock(sessionSec()); if (running() && dayTotalLive() >= FT_CAP) sessionEnd('done'); }, 1000);
+  ft.tickT = setInterval(() => {
+    const S2 = ft.session; if (!S2) return;
+    const t = sessionSec(), g = goalSecOf(S2), el = document.getElementById('ft-clock');
+    if (el) el.textContent = S2.goal ? fmtClock(Math.max(0, g - t)) : fmtClock(t);
+    const st = stageOf(t / g), img = document.querySelector('.focus-island .tree-img');
+    if (img && img.dataset.st !== String(st)) render();
+    if (S2.phase === 'focus' && S2.goal && t >= g) sessionEnd('done');
+    else if (S2.phase === 'focus' && !S2.goal && t >= g && !S2.chimed) { S2.chimed = true; chime(); toast('ได้ต้นไม้แล้ว อ่านต่อได้ หรือกดหยุดเพื่อปลูกลงป่า'); }
+    if (running() && dayTotalLive() >= FT_CAP) sessionEnd('done');
+  }, 1000);
   ft.beatT = setInterval(() => { if (running() && ft.mine && !document.hidden) updateDoc(fRef(myNo), { beat: serverTimestamp() }).catch(() => { ft.mine = false; stopTimers(); render(); }); }, BEAT_MS);
 }
 function stopTimers() { clearInterval(ft.tickT); clearInterval(ft.beatT); ft.tickT = ft.beatT = null; }
@@ -639,43 +679,39 @@ async function loadLog(no) {
   } catch (e) { ft.log[no] = 'err'; }
   if (ui.view === 'tree') render();
 }
-// growth stages 0–3 share one look; the mature tree (stage 4) shows this tree's kind
-function treeSvg(totalSec, size, forceStage) {
-  const min = totalSec / 60, kind = FT_KINDS[Math.floor(min / FT_TREE) % FT_KINDS.length], m = min % FT_TREE;
-  const st = forceStage != null ? forceStage : FT_STAGES.filter(x => m >= x[0]).length - 1;
-  const src = TREE_IMG['s' + st];
-  return '<img class="tree-img" src="' + src + '" width="' + size + '" height="' + size + '" alt="' + FT_STAGES[st][1] + '' + '" decoding="async">';
+const stageOf = p => FT_STAGES.filter(x => p >= x[0]).length - 1;
+function treeSvg(st, size) {
+  return '<img class="tree-img" data-st="' + st + '" src="' + TREE_IMG['s' + st] + '" width="' + size + '" height="' + size + '" alt="' + FT_STAGES[st][1] + '" decoding="async">';
 }
 function viewTree() {
   if (!ft.loaded) { ft.loaded = 'loading'; loadRanking(); }
   clearInterval(ft.listT); ft.listT = setInterval(() => { if (ui.view === 'tree' && !document.hidden) loadRanking(); else clearInterval(ft.listT); }, 60000);
   const k = bkkKeys();
-  const total = (ft.me ? ft.me.totalSec || 0 : 0) + runSec();
-  const min = total / 60, inTree = min % FT_TREE, trees = Math.floor(min / FT_TREE), kind = FT_KINDS[trees % FT_KINDS.length];
-  const stIdx = FT_STAGES.filter(x => inTree >= x[0]).length - 1, next = FT_STAGES[stIdx + 1];
-  const nextTxt = next ? 'อีก ' + Math.ceil(next[0] - inTree) + ' นาที → ' + next[1] : 'อีก ' + Math.ceil(FT_TREE - inTree) + ' นาที ปลดล็อกต้นไม้ต้นใหม่';
+  const total = (ft.me ? ft.me.totalSec || 0 : 0) + runSec(), trees = ft.me ? ft.me.trees || 0 : 0;
   const today = dayTotalLive();
-  let h = '<div class="sec-h" style="margin-top:14px"><h2>Focus Tree</h2><span>อ่านแล้วต้นไม้โต</span></div>';
+  let h = '<div class="sec-h" style="margin-top:14px"><h2>Focus Tree</h2><span>อ่าน 1 รอบ ได้ต้นไม้ 1 ต้น</span></div>';
   h += '<div class="hero ft-card">';
-  if (!user) h += '<p class="hero-title" style="cursor:default">เข้าสู่ระบบเพื่อเริ่มจับเวลาอ่านหนังสือ</p><button class="btn primary" data-act="login">เข้าสู่ระบบ</button>';
-  else if (myNo == null) h += '<p class="hero-title" style="cursor:default">ผูกเลขที่ของคุณก่อน แล้วค่อยเริ่มจับเวลา</p><p class="t-sub">ดูที่ด้านบนของหน้างาน หรือแท็บรายชื่อ</p>';
+  if (!user) h += '<p class="hero-title" style="cursor:default">เข้าสู่ระบบเพื่อเริ่มปลูกต้นไม้</p><button class="btn primary" data-act="login">เข้าสู่ระบบ</button>';
+  else if (myNo == null) h += '<p class="hero-title" style="cursor:default">ผูกเลขที่ของคุณก่อน แล้วค่อยเริ่มปลูกต้นไม้</p><p class="t-sub">ดูที่ด้านบนของหน้างาน หรือแท็บรายชื่อ</p>';
   else {
-    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(total, 150) + '</div><div class="ft-info"><div class="hero-k">' + 'ต้นที่ ' + (trees + 1) + '</div>' +
-      '<div class="ft-stage">' + FT_STAGES[stIdx][1] + '</div><div class="t-sub">' + nextTxt + '</div>' +
-      '<div class="ft-bar"><i style="width:' + Math.min(100, inTree / FT_TREE * 100) + '%"></i></div></div></div>';
+    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(trees ? 5 : 0, 150) + '</div><div class="ft-info"><div class="hero-k">ป่าของฉัน</div>' +
+      '<div class="ft-stage">' + trees + ' ต้น</div><div class="t-sub">อ่านสะสมทั้งหมด ' + fmtMin(total) + '</div></div></div>';
+    h += '<div><div class="hero-k" style="margin-bottom:8px">ตั้งเวลาอ่าน</div><div class="chips ft-subj">' +
+      FT_GOALS.concat([0]).map(g => '<button class="chip" data-act="ft-goal" data-v="' + g + '" aria-pressed="' + (ft.goal === g) + '">' + (g ? g + ' นาที' : 'ไม่จำกัด') + '</button>').join('') + '</div>' +
+      '<p class="t-sub" style="margin:6px 0 0">' + (ft.goal ? 'อ่านครบ ' + ft.goal + ' นาที ได้ต้นไม้ 1 ต้น' : 'จับเวลาเดินหน้า อ่านครบ ' + OPEN_GOAL + ' นาทีขึ้นไปได้ต้นไม้ 1 ต้น') + '</p></div>';
     const subs = [...new Set(subjects().concat(['อ่านทั่วไป']))];
     if (!ft.subject || !subs.includes(ft.subject)) ft.subject = subs[0];
-    h += '<div><div class="hero-k" style="margin-bottom:8px">วันนี้จะอ่านวิชาอะไร</div><div class="chips ft-subj">' +
+    h += '<div><div class="hero-k" style="margin-bottom:8px">วิชาที่จะอ่าน</div><div class="chips ft-subj">' +
       subs.map(x => '<button class="chip" data-act="ft-subj" data-v="' + esc(x) + '" aria-pressed="' + (ft.subject === x) + '">' + esc(x) + '</button>').join('') + '</div></div>';
-    h += '<button class="btn primary ft-btn" data-act="ft-start"' + (today >= FT_CAP ? ' disabled' : '') + '>' + ico('play') + (today >= FT_CAP ? 'ครบ 6 ชั่วโมงของวันนี้แล้ว' : 'เริ่มโฟกัส') + '</button>' +
-      '<p class="t-sub ft-note">ระหว่างโฟกัสห้ามสลับแอปหรือปิดหน้าเว็บ ไม่อย่างนั้นต้นไม้จะเหี่ยว</p>';
+    h += '<button class="btn primary ft-btn" data-act="ft-start"' + (today >= FT_CAP ? ' disabled' : '') + '>' + ico('play') + (today >= FT_CAP ? 'ครบ 6 ชั่วโมงของวันนี้แล้ว' : 'เริ่มปลูกต้นไม้' + (ft.goal ? ' · ' + ft.goal + ' นาที' : '')) + '</button>' +
+      '<p class="t-sub ft-note">ระหว่างอ่านห้ามสลับแอปหรือปิดหน้าเว็บ ไม่อย่างนั้นต้นไม้จะเหี่ยว</p>';
     h += '<div class="ft-today"><span>วันนี้ ' + fmtMin(today) + '</span><span>สูงสุด 6 ชม.</span></div><div class="ft-bar thin"><i style="width:' + Math.min(100, today / FT_CAP * 100) + '%"></i></div>';
   }
   h += '</div>';
   if (user && myNo != null && trees > 0) {
-    h += '<div class="group-h">ป่าของฉัน · ' + trees + ' ต้น</div><div class="forest">';
-    for (let i = 0; i < Math.min(trees, 24); i++) h += '<span class="forest-t">' + treeSvg((i * FT_TREE + 250) * 60, 56, 5) + '</span>';
-    h += (trees > 24 ? '<span class="t-sub">+' + (trees - 24) + '</span>' : '') + '</div>';
+    h += '<div class="forest">';
+    for (let i = 0; i < Math.min(trees, 30); i++) h += '<span class="forest-t">' + treeSvg(5, 56) + '</span>';
+    h += (trees > 30 ? '<span class="t-sub">+' + (trees - 30) + '</span>' : '') + '</div>';
   }
   // ranking
   const ranges = [['day', 'วันนี้'], ['week', 'สัปดาห์นี้'], ['month', 'เดือนนี้']];
@@ -684,7 +720,7 @@ function viewTree() {
   const rows = ft.list.map(d => {
     const live = myNo != null && d.no === myNo && ft.me ? { ...ft.me, no: myNo } : d;
     const sec = bucket(live, ft.range, k) + (live.no === myNo ? runSec() : 0);
-    return { no: d.no, sec, trees: Math.floor(((live.totalSec || 0) + (live.no === myNo ? runSec() : 0)) / 60 / FT_TREE), reading: live.state === 'running' };
+    return { no: d.no, sec, trees: live.trees || 0, reading: live.state === 'running' };
   }).filter(r => r.sec >= 60).sort((a, b) => b.sec - a.sec);
   if (!rows.length) h += '<div class="empty">ยังไม่มีใครอ่าน' + (ft.range === 'day' ? 'วันนี้' : ft.range === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้') + ' เริ่มเป็นคนแรกเลย</div>';
   else {
@@ -712,26 +748,30 @@ function forestBg() {
 }
 function focusOverlay() {
   const S2 = ft.session; if (!S2) return '';
-  const total = (ft.me ? ft.me.totalSec || 0 : 0) + (S2.phase === 'focus' && running() && ft.mine ? runSec() : 0);
-  const img = treeSvg(total, 320), ph = S2.phase;
-  const done = ph === 'done' || ph === 'withered';
+  const ph = S2.phase, done = ph === 'done' || ph === 'withered', g = goalSecOf(S2), t = sessionSec();
+  const st = done ? (S2.tree ? 5 : stageOf(S2.credited / g)) : stageOf(t / g);
   let h = '<div class="focus' + (ph === 'withered' ? ' withered' : '') + (ph === 'paused' ? ' paused' : '') + '" role="dialog" aria-modal="true" aria-label="โหมดโฟกัส">' +
     '<div class="focus-rays" aria-hidden="true"></div>' + forestBg() +
-    '<div class="focus-top"><div class="focus-subj"><i></i>' + esc(S2.subject) + '</div><div class="t-sub">' + (done ? 'เซสชันนี้' : 'ตอนนี้ฉันกำลังโฟกัสกับ…') + '</div></div>' +
+    '<div class="focus-top"><div class="focus-subj"><i></i>' + esc(S2.subject) + '</div><div class="t-sub">' + (done ? 'รอบนี้' : (S2.goal ? 'ตั้งไว้ ' + S2.goal + ' นาที' : 'จับเวลาไม่จำกัด')) + '</div></div>' +
     (done ? '' : '<button class="focus-sound" data-act="ft-sound" aria-label="เสียงบรรยากาศ" aria-expanded="' + SND.open + '">' + ico(SND.kind === 'off' ? 'mute' : 'sound') + '</button>') +
-    '<div class="focus-island">' + img + '</div>';
+    '<div class="focus-island">' + treeSvg(st, 320) + '<div class="focus-stage">' + FT_STAGES[st][1] + '</div></div>';
   if (done) {
-    h += '<div class="focus-msg">' + (ph === 'withered' ? 'ออกจากหน้าเว็บระหว่างโฟกัส ต้นไม้เลยเหี่ยว<br>ไม่เป็นไร ครั้งหน้าจะดีขึ้น' : (S2.credited >= 60 ? 'เยี่ยมมาก ต้นไม้ของคุณโตขึ้นแล้ว' : 'สั้นไปนิด ยังไม่ถึง 1 นาที')) + '</div>' +
-      '<div class="focus-got">' + ico('clock') + fmtClock(S2.credited) + (ph === 'withered' && S2.credited >= 60 ? ' <small>ยังนับเวลาให้</small>' : '') + '</div>' +
+    let msg;
+    if (ph === 'withered') msg = 'ออกจากหน้าเว็บระหว่างอ่าน ต้นไม้เลยเหี่ยว<br>ไม่เป็นไร ครั้งหน้าจะดีขึ้น';
+    else if (S2.tree) msg = 'ปลูกต้นไม้สำเร็จ ได้ต้นไม้เข้าป่า 1 ต้น';
+    else msg = 'ยังไม่ครบ ' + (S2.goal || OPEN_GOAL) + ' นาที ต้นไม้เลยยังไม่เข้าป่า<br>แต่เวลาที่อ่านยังนับให้';
+    h += '<div class="focus-msg">' + msg + '</div>' +
+      '<div class="focus-got">' + ico('clock') + fmtClock(S2.credited) + '</div>' +
       '<button class="focus-home" data-act="ft-close">กลับสู่หน้าหลัก</button>';
   } else {
-    h += '<div class="focus-clock" id="ft-clock">' + fmtClock(sessionSec()) + '</div>';
+    h += '<div class="focus-clock" id="ft-clock">' + (S2.goal ? fmtClock(Math.max(0, g - t)) : fmtClock(t)) + '</div>';
     if (ph === 'paused') h += '<div class="focus-msg">พักอยู่ · เหลือเวลาพัก <b id="ft-pause">' + fmtClock((S2.pauseUntil - Date.now()) / 1000) + '</b></div>';
     else h += '<div class="focus-msg dim">' + (ph === 'focus' ? 'อย่าสลับแอปหรือปิดหน้าเว็บ' : 'กำลังบันทึก…') + '</div>';
-    h += '<div class="focus-btns"><button class="fb" data-act="ft-end" aria-label="จบการอ่าน"' + (ph === 'saving' || ph === 'starting' ? ' disabled' : '') + '>' + ico('stop') + '</button>' +
+    h += '<div class="focus-btns"><button class="fb" data-act="ft-end" aria-label="หยุดอ่าน"' + (ph === 'saving' || ph === 'starting' ? ' disabled' : '') + '>' + ico('stop') + '</button>' +
       (ph === 'paused'
         ? '<button class="fb main" data-act="ft-resume" aria-label="อ่านต่อ">' + ico('play') + '</button>'
         : '<button class="fb main" data-act="ft-pause" aria-label="หยุดพัก"' + (ph !== 'focus' ? ' disabled' : '') + '>' + ico('pause') + '</button>') + '</div>';
+    if (ft.confirmEnd) h += '<div class="focus-sheet confirm-end"><p class="ce-t">หยุดอ่านตอนนี้?</p><p>' + (S2.goal && t < g - 30 ? 'ยังไม่ครบ ' + S2.goal + ' นาที ต้นไม้จะยังไม่เข้าป่า แต่เวลาที่อ่านยังนับให้' : 'ต้นไม้จะถูกปลูกลงป่า') + '</p><div class="ce-b"><button data-act="ft-end-no">อ่านต่อ</button><button data-act="ft-end-yes" class="danger">หยุด</button></div></div>';
   }
   if (SND.open && !done) h += '<div class="focus-sheet" role="menu">' + SOUNDS.map(([k, l]) => '<button role="menuitemradio" aria-checked="' + (SND.kind === k) + '" data-act="ft-snd" data-v="' + k + '"><i></i>' + l + '</button>').join('') + '<p>เสียงสร้างจากเว็บ ไม่ต้องโหลดไฟล์</p></div>';
   return h + '</div>';
@@ -777,8 +817,11 @@ document.addEventListener('click', ev => {
     case 'ft-start': sessionStart(); return;
     case 'ft-pause': sessionPause(); return;
     case 'ft-resume': sessionResume(); return;
-    case 'ft-end': sessionEnd('done'); return;
-    case 'ft-close': ft.session = null; SND.open = false; break;
+    case 'ft-end': ft.confirmEnd = true; break;
+    case 'ft-end-no': ft.confirmEnd = false; break;
+    case 'ft-end-yes': ft.confirmEnd = false; sessionEnd('done'); return;
+    case 'ft-goal': ft.goal = +v; try { localStorage.setItem('ct-goal', String(ft.goal)); } catch (e) {} break;
+    case 'ft-close': ft.session = null; SND.open = false; ft.confirmEnd = false; break;
     case 'ft-subj': ft.subject = v; break;
     case 'ft-sound': SND.open = !SND.open; break;
     case 'ft-snd': SND.open = false; playSound(v); if (!ft.session || ft.session.phase !== 'focus') stopSound(); break;

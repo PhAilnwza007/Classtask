@@ -356,3 +356,10 @@ body.focus-on .dock{display:none}
 .focus.withered .focus-forest .near{fill:#3e4428}
 .focus.withered .focus-island::before{background:radial-gradient(ellipse at center,rgba(210,200,140,.7),rgba(170,160,110,.3) 40%,transparent 72%)}
 .focus-sheet{z-index:5}
+.focus-stage{position:relative;margin-top:-6px;font-size:14px;font-weight:500;color:rgba(250,255,235,.9);text-shadow:0 2px 10px rgba(10,40,10,.5);text-align:center}
+.focus-sheet.confirm-end{padding:18px;text-align:center}
+.confirm-end .ce-t{font-size:18px;font-weight:600;margin:0 0 6px;color:#2a2a24}
+.confirm-end p{font-size:14px;color:#55513f;margin:0 0 14px}
+.ce-b{display:flex;gap:10px}
+.ce-b button{flex:1;border:0;border-radius:14px;padding:12px;font:inherit;font-size:15px;font-weight:500;background:#e9e4d8;color:#2a2a24;cursor:pointer;justify-content:center;text-align:center;display:block}
+.ce-b button.danger{background:#a84a35;color:#fff}
