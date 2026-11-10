@@ -99,8 +99,8 @@ function trunkPath(pts, w, k) {
   const line = arr => arr.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
   return line(A) + ' ' + B.reverse().map(p => 'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ') + 'Z';
 }
-function draw(model, p) {
-  let s = '';
+function draw(model, p, layer = 'all') {
+  let s = '', base = '';
   // stand and pot
   s += '<path d="M40 452 L362 446 L368 470 L348 470 L344 492 L64 494 L60 472 L36 472 Z" fill="#4b2a1c"/><path d="M40 452 L362 446 L364 454 L42 460 Z" fill="#6b3d28"/>';
   s += '<ellipse cx="226" cy="436" rx="104" ry="13" fill="#5c3424"/><path d="M122 436 Q124 452 150 454 L302 454 Q328 452 330 436 Z" fill="#6e3f2b"/>';
@@ -114,6 +114,8 @@ function draw(model, p) {
   const mossC = {};
   model.moss.forEach(([x, y, r, c], i) => { if (i / model.moss.length < mossShow) mossC[c] = (mossC[c] || '') + 'M' + (x - r).toFixed(1) + ' ' + y.toFixed(1) + 'a' + r.toFixed(1) + ' ' + r.toFixed(1) + ' 0 1 0 ' + (2 * r).toFixed(1) + ' 0a' + r.toFixed(1) + ' ' + r.toFixed(1) + ' 0 1 0 ' + (-2 * r).toFixed(1) + ' 0Z'; });
   Object.keys(mossC).forEach(c => { s += '<path d="' + mossC[c] + '" fill="' + c + '"/>'; });
+  // everything above is the pot, rock and moss (stays still); the tree itself starts here
+  base = s; s = '';
   // trunks
   TRUNKS.forEach(T => {
     const k = clamp((p - T.t) / .5); if (k <= 0) { if (p < .15) s += '<path d="M' + T.pts[0][0] + ' ' + T.pts[0][1] + ' q-3 -8 0 -12 q6 2 4 8" fill="#7fa04a"/>'; return; }
@@ -145,7 +147,8 @@ function draw(model, p) {
   model.pads.forEach(pd => { const k = clamp((p - pd.t) / .3); if (k <= 0) return; const sc = .45 + .55 * ease(k), rx = pd.w * .46 * sc, ry = pd.w * .1 * sc, cy = pd.y + pd.w * .1 * sc; shade += 'M' + (pd.x - rx).toFixed(1) + ' ' + cy.toFixed(1) + 'a' + rx.toFixed(1) + ' ' + ry.toFixed(1) + ' 0 1 0 ' + (2 * rx).toFixed(1) + ' 0a' + rx.toFixed(1) + ' ' + ry.toFixed(1) + ' 0 1 0 ' + (-2 * rx).toFixed(1) + ' 0Z'; });
   if (shade) s += '<path d="' + shade + '" fill="#3d5524" opacity=".55"/>';
   LEAF.forEach(c => { if (byC[c]) s += '<path d="' + byC[c] + '" fill="' + c + '"/>'; });
-  return s;
+  // layer: 'all' = whole picture, 'base' = pot + rock + moss only, 'tree' = trunk + branches + leaves only
+  return layer === 'base' ? base : layer === 'tree' ? s : base + s;
 }
 
 export function bonsaiModel(seed, detail = 1) {
@@ -153,7 +156,7 @@ export function bonsaiModel(seed, detail = 1) {
   if (!cache.has(key)) { if (cache.size > 40) cache.clear(); cache.set(key, build(seed, detail)); }
   return cache.get(key);
 }
-export function bonsaiInner(seed, p, detail = 1) { return draw(bonsaiModel(seed, detail), clamp(p)); }
-export function bonsaiSvg(seed, p, detail = 1, cls = 'bonsai') {
-  return '<svg class="' + cls + '" viewBox="-50 -30 500 530" width="500" height="530" preserveAspectRatio="xMidYMax meet" aria-hidden="true">' + bonsaiInner(seed, p, detail) + '</svg>';
+export function bonsaiInner(seed, p, detail = 1, layer = 'all') { return draw(bonsaiModel(seed, detail), clamp(p), layer); }
+export function bonsaiSvg(seed, p, detail = 1, cls = 'bonsai', layer = 'all') {
+  return '<svg class="' + cls + '" viewBox="-50 -30 500 530" width="500" height="530" preserveAspectRatio="xMidYMax meet" aria-hidden="true">' + bonsaiInner(seed, p, detail, layer) + '</svg>';
 }

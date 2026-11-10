@@ -3,7 +3,7 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, se
 import { getFirestore, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js?v=2";
 import { DEFAULT_ROSTER } from "./roster-default.js";
-import { bonsaiSvg } from "./bonsai.js?v=2";
+import { bonsaiSvg } from "./bonsai.js?v=3";
 
 const TM = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const TMF = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
@@ -681,8 +681,14 @@ function startTimers() {
     const t = sessionSec(), g = goalSecOf(S2), el = document.getElementById('ft-clock');
     if (el) el.textContent = S2.goal ? fmtClock(Math.max(0, Math.ceil(g - t - 0.001))) : fmtClock(t);
     // grow the bonsai a little at a time (only the picture is swapped, not the whole screen)
-    const img = document.querySelector('.focus-island .tree-img'), gp = growStep(t / g);
-    if (img && img.dataset.p !== String(gp)) { img.src = bonsaiURL(sessionSeed(), gp, 1); img.dataset.p = gp; const lb = document.querySelector('.focus-stage'); if (lb) lb.textContent = FT_STAGES[stageOf(gp)][1]; }
+    const stack = document.querySelector('.focus-island .tree-stack'), gp = growStep(t / g);
+    if (stack && stack.querySelector('.tl-tree').dataset.p !== String(gp)) {
+      stack.querySelectorAll('.tree-img').forEach(im => { im.src = bonsaiURL(sessionSeed(), gp, 1, im.dataset.layer); im.dataset.p = gp; });
+      const st = stageOf(gp), lb = document.querySelector('.focus-stage');
+      if (lb) lb.textContent = FT_STAGES[st][1];
+      // reached a new stage: the tree does a little growth "pop" with a soft glow
+      if (stack.dataset.st !== String(st)) { stack.dataset.st = st; stack.classList.remove('pop'); void stack.offsetWidth; stack.classList.add('pop'); }
+    }
     if (S2.phase === 'focus' && S2.goal && t >= g) sessionEnd('done');
     else if (S2.phase === 'focus' && !S2.goal && t >= g && !S2.chimed) { S2.chimed = true; chime(); toast('ได้ต้นไม้แล้ว อ่านต่อได้ หรือกดหยุดเพื่อปลูกลงป่า'); }
     if (running() && dayTotalLive() >= FT_CAP) sessionEnd('done');
@@ -713,11 +719,11 @@ const stageOf = p => FT_STAGES.filter(x => p >= x[0]).length - 1;
 // which is much lighter for the browser than putting thousands of leaves into the page itself
 const growStep = p => Math.round(Math.max(0, Math.min(1, p)) * 120) / 120;
 const bURL = new Map();
-function bonsaiURL(seed, p, detail) {
-  const key = seed + '|' + p + '|' + detail;
+function bonsaiURL(seed, p, detail, layer = 'all') {
+  const key = seed + '|' + p + '|' + detail + '|' + layer;
   if (!bURL.has(key)) {
     if (bURL.size > 80) { const [k, u] = bURL.entries().next().value; URL.revokeObjectURL(u); bURL.delete(k); }
-    bURL.set(key, URL.createObjectURL(new Blob([bonsaiSvg(seed, p, detail).replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ')], { type: 'image/svg+xml' })));
+    bURL.set(key, URL.createObjectURL(new Blob([bonsaiSvg(seed, p, detail, 'bonsai', layer).replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ')], { type: 'image/svg+xml' })));
   }
   return bURL.get(key);
 }
@@ -727,6 +733,13 @@ const sessionSeed = () => treeSeed(ft.session && ft.session.seedIdx != null ? ft
 function treeSvg(seed, p, size, detail) {
   p = growStep(p);
   return '<img class="tree-img" data-p="' + p + '" src="' + bonsaiURL(seed, p, detail || 1) + '" width="' + size + '" height="' + Math.round(size * 1.06) + '" alt="บอนไซ ' + FT_STAGES[stageOf(p)][1] + '" decoding="async">';
+}
+// the big tree on the focus screen: pot/rock (still) + tree (sways) stacked as two pictures,
+// so the sway animation keeps running smoothly while the tree grows
+function focusTree(seed, p) {
+  p = growStep(p);
+  const L = (layer, cls) => '<img class="tree-img ' + cls + '" data-layer="' + layer + '" data-p="' + p + '" src="' + bonsaiURL(seed, p, 1, layer) + '" width="360" height="382" alt="' + (layer === 'tree' ? 'บอนไซ ' + FT_STAGES[stageOf(p)][1] : '') + '" decoding="async">';
+  return '<div class="tree-stack" data-st="' + stageOf(p) + '">' + L('base', 'tl-base') + L('tree', 'tl-tree') + '<i class="tree-glow"></i>' + (p > .15 ? '<i class="tree-leaf l1"></i><i class="tree-leaf l2"></i><i class="tree-leaf l3"></i>' : '') + '</div>';
 }
 function viewTree() {
   if (!ft.loaded) { ft.loaded = 'loading'; loadRanking(); }
@@ -739,7 +752,7 @@ function viewTree() {
   if (!user) h += '<p class="hero-title" style="cursor:default">เข้าสู่ระบบเพื่อเริ่มปลูกต้นไม้</p><button class="btn primary" data-act="login">เข้าสู่ระบบ</button>';
   else if (myNo == null) h += '<p class="hero-title" style="cursor:default">ผูกเลขที่ของคุณก่อน แล้วค่อยเริ่มปลูกต้นไม้</p><p class="t-sub">ดูที่ด้านบนของหน้างาน หรือแท็บรายชื่อ</p>';
   else {
-    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(treeSeed(Math.max(0, trees - 1)), trees ? 1 : .12, 150, .35) + '</div><div class="ft-info"><div class="hero-k">ป่าของฉัน</div>' +
+    h += '<div class="ft-top"><div class="ft-tree">' + treeSvg(treeSeed(Math.max(0, trees - 1)), 1, 150, .35) + '</div><div class="ft-info"><div class="hero-k">ป่าของฉัน</div>' +
       '<div class="ft-stage">' + trees + ' ต้น</div><div class="t-sub">อ่านสะสมทั้งหมด ' + fmtMin(total) + '</div></div></div>';
     h += '<div><div class="hero-k" style="margin-bottom:8px">ตั้งเวลาอ่าน</div><div class="chips ft-subj">' +
       FT_GOALS.concat([0]).map(g => '<button class="chip" data-act="ft-goal" data-v="' + g + '" aria-pressed="' + (ft.goal === g) + '">' + (g ? g + ' นาที' : 'ไม่จำกัด') + '</button>').join('') + '</div>' +
@@ -804,7 +817,7 @@ function focusOverlay() {
     zenBg() +
     '<div class="focus-top"><div class="focus-subj"><i></i>' + esc(S2.subject) + '</div><div class="t-sub">' + (done ? 'รอบนี้' : (S2.goal ? 'ตั้งไว้ ' + S2.goal + ' นาที' : 'จับเวลาไม่จำกัด')) + '</div></div>' +
     (done ? '' : '<button class="focus-sound" data-act="ft-sound" aria-label="เสียงบรรยากาศ" aria-expanded="' + SND.open + '">' + ico(SND.kind === 'off' ? 'mute' : 'sound') + '</button>') +
-    '<div class="focus-island"><div class="tree-stand">' + treeSvg(sessionSeed(), gp, 360, 1) + '</div>' + '<div class="focus-stage">' + FT_STAGES[st][1] + '</div></div>';
+    '<div class="focus-island"><div class="tree-stand">' + focusTree(sessionSeed(), gp) + '</div>' + '<div class="focus-stage">' + FT_STAGES[st][1] + '</div></div>';
   if (done) {
     let msg;
     if (ph === 'withered') msg = 'ออกจากหน้าเว็บระหว่างอ่าน ต้นไม้เลยเหี่ยว<br>ไม่เป็นไร ครั้งหน้าจะดีขึ้น';
