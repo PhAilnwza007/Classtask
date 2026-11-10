@@ -456,3 +456,55 @@ body.focus-on .dock{display:none}
 @keyframes tree-pop{0%{transform:scale(1)}40%{transform:scale(1.05)}70%{transform:scale(.99)}100%{transform:scale(1)}}
 @keyframes tree-glow{0%{opacity:0}30%{opacity:1}100%{opacity:0}}
 @keyframes leaf-fall{0%{opacity:0;transform:translate(0,0) rotate(0)}8%{opacity:.85}60%{opacity:.7;transform:translate(18px,90px) rotate(160deg)}85%{opacity:0;transform:translate(-6px,150px) rotate(300deg)}100%{opacity:0;transform:translate(-6px,150px) rotate(300deg)}}
+
+/* lotus backdrop: Chinese water garden at dawn (markup from lotus-scene.js) */
+.ls{position:absolute;inset:0;pointer-events:none;overflow:hidden;background:linear-gradient(180deg,#f5e6dc 0%,#f1ebe1 26%,#e5ece4 34%,#d4e2db 48%)}
+.ls-sun{position:absolute;right:16%;top:7%;width:min(28vw,170px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#fff8f2 0%,#fbdcd8 42%,rgba(251,220,216,0) 70%)}
+.ls-hills{position:absolute;left:0;right:0;bottom:63%;width:100%;height:32%}
+.ls .zen-mist{position:absolute;left:-20%;right:-20%;height:16%;border-radius:50%;background:radial-gradient(ellipse at center,rgba(255,255,255,.8),rgba(255,255,255,0) 70%);filter:blur(6px)}
+.ls .zen-mist.m1{bottom:68%}
+.ls .zen-mist.m2{bottom:63%;opacity:.75}
+.ls-pond{position:absolute;left:0;right:0;bottom:51%;height:15%;overflow:hidden;
+  background:linear-gradient(180deg,rgba(214,228,221,0) 0%,#cfe0d8 18%,#b6cdc4 70%,#a8c1b8 100%)}
+.ls-pond::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(180deg,rgba(255,255,255,0) 0 9px,rgba(255,255,255,.22) 9px 10px)}
+.ls-pads{position:absolute;inset:0;width:100%;height:100%}
+.ls-rip{fill:none;stroke:#eef6f1;stroke-width:1.4}
+.ls-koi{position:absolute;left:0;top:58%;width:46px;height:auto;opacity:.75;filter:blur(.4px)}
+.ls-koi.k2{top:30%;width:38px}
+.ls-terrace{position:absolute;left:0;right:0;bottom:0;height:52%;
+  background:linear-gradient(180deg,#c9bfa8 0,#c9bfa8 3px,#e9e2d3 3px,#e2d9c7 40%,#d5cbb6 100%)}
+.ls-terrace::before{content:"";position:absolute;inset:3px 0 0;background:linear-gradient(180deg,rgba(150,138,112,0) 0 22%,rgba(150,138,112,.3) 22% calc(22% + 1px),rgba(150,138,112,0) calc(22% + 1px) 52%,rgba(150,138,112,.3) 52% calc(52% + 1px),rgba(150,138,112,0) calc(52% + 1px)),repeating-linear-gradient(90deg,rgba(150,138,112,0) 0 118px,rgba(150,138,112,.24) 118px 120px)}
+.ls-terrace::after{content:"";position:absolute;left:0;right:0;top:-14px;height:14px;background:linear-gradient(180deg,rgba(168,193,184,0),rgba(120,140,130,.25))}
+.ls-willow{position:absolute;left:0;top:0;width:min(48vw,300px);height:auto;overflow:visible}
+.ls-bird{position:absolute;right:-40px;top:16%;width:24px;height:auto;opacity:0}
+.ls-bird.b2{top:20%;width:18px}
+@media (prefers-reduced-motion:no-preference){
+  .ls .zen-mist.m1{animation:ls-mist 38s ease-in-out infinite alternate}
+  .ls .zen-mist.m2{animation:ls-mist 52s ease-in-out infinite alternate-reverse}
+  .ls-strand{animation:ls-sway 7s ease-in-out infinite alternate}
+  .ls-rip{transform-box:fill-box;transform-origin:50% 50%;animation:ls-rip 6s ease-out infinite;opacity:0}
+  .ls-rip.r2{animation-delay:-2s}.ls-rip.r3{animation-delay:-4s}
+  .ls-koi{animation:ls-koi 38s linear infinite}
+  .ls-koi.k2{animation:ls-koi2 52s linear infinite;animation-delay:-20s}
+  .ls-bird{animation:ls-bird 32s linear infinite,ls-flap .32s ease-in-out infinite alternate}
+  .ls-bird.b2{animation-delay:-.6s,-.1s}
+}
+@keyframes ls-mist{from{transform:translateX(-6%)}to{transform:translateX(6%)}}
+@keyframes ls-sway{from{transform:rotate(-2.5deg)}to{transform:rotate(2.5deg)}}
+@keyframes ls-rip{0%{transform:scale(.2);opacity:.9}100%{transform:scale(1.6);opacity:0}}
+@keyframes ls-koi{0%{translate:-60px 0;rotate:0deg}25%{translate:25vw 8px;rotate:6deg}50%{translate:50vw -4px;rotate:-5deg}75%{translate:75vw 6px;rotate:4deg}100%{translate:calc(100vw + 60px) 0;rotate:0deg}}
+@keyframes ls-koi2{0%{translate:calc(100vw + 60px) 0;scale:-1 1}30%{translate:66vw -6px;scale:-1 1}60%{translate:34vw 6px;scale:-1 1}100%{translate:-60px 0;scale:-1 1}}
+@keyframes ls-bird{0%{translate:0 0;opacity:0}2%{opacity:.85}20%{translate:calc(-100vw - 80px) 40px;opacity:.85}21%,100%{translate:calc(-100vw - 80px) 40px;opacity:0}}
+@keyframes ls-flap{from{scale:1 1}to{scale:1 .35}}
+.focus.withered .ls{filter:grayscale(.65) sepia(.25) brightness(.95)}
+/* lotus kind on the focus screen */
+.focus-island .tree-stack.k-lotus .tl-tree{transform-origin:50% 70%}
+.tree-stack.k-lotus .tree-leaf{width:10px;height:6px;border-radius:10px 0;background:#f2a9c0}
+.tree-stack.k-lotus .tree-leaf.l1{background:#f7c4d2}
+.tree-stack.k-lotus .tree-leaf.l3{background:#e9879f}
+.tree-stack.k-lotus .tree-glow{background:radial-gradient(closest-side,rgba(255,226,236,.9),rgba(255,190,210,.35) 55%,rgba(255,190,210,0))}
+@media (prefers-reduced-motion:no-preference){.focus.k-lotus:not(.withered):not(.paused) .focus-island .tree-img.tl-tree{animation:lotus-sway 6s ease-in-out infinite}}
+@keyframes lotus-sway{0%,100%{transform:rotate(-.5deg)}50%{transform:rotate(.5deg)}}
+/* tree kind picker */
+.kind-chip{display:inline-flex;align-items:center;gap:6px}
+.kind-chip .tree-img{width:24px;height:26px;display:inline-block;object-fit:contain;margin:-4px 0 -4px -6px}
