@@ -508,3 +508,10 @@ body.focus-on .dock{display:none}
 /* tree kind picker */
 .kind-chip{display:inline-flex;align-items:center;gap:6px}
 .kind-chip .tree-img{width:24px;height:26px;display:inline-block;object-fit:contain;margin:-4px 0 -4px -6px}
+
+/* fix: on short screens the picture overflowed its box and the stage label sat on top of the clock.
+   The island is now a column: the picture box takes whatever height is left and the picture fits inside it. */
+.focus-island{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.focus-island .tree-stand{flex:1 1 0;min-height:0;width:100%;height:auto;max-height:none;container-type:size;place-items:end center}
+.focus-island .tree-img{height:min(100cqh,50vh,520px);max-height:none}
+.focus-stage{flex:none;margin-top:0}
