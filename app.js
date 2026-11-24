@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js?v=2";
 import { DEFAULT_ROSTER } from "./roster-default.js";
 import { bonsaiSvg } from "./bonsai.js?v=3";
@@ -29,12 +29,13 @@ const ICON = {
   sound: '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
   mute: '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
-  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>'
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+  exam: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>'
 };
 const ico = k => '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
 
 // subs: { taskId: Set(เลขที่ที่ส่งแล้ว) }, claims: { เลขที่: uid }
-const S = { className: 'ม.4/2', roster: [], tasks: [], subs: {}, claims: {}, loaded: { cls: false, tasks: false }, error: '' };
+const S = { className: 'ม.4/2', roster: [], tasks: [], exams: [], subs: {}, claims: {}, loaded: { cls: false, tasks: false }, error: '' };
 const ui = { auth: null, view: 'tasks', open: null, filter: 'all', editing: null, confirmDel: null, confirmRelease: null, claimPick: '', claimConfirm: false, month: null, sel: null, showPast: false, rosterEdit: false };
 try { const sv = JSON.parse(sessionStorage.getItem('ct-ui') || 'null'); if (sv) { ui.view = sv.view || 'tasks'; ui.open = sv.open || null; } } catch (e) {}
 let user = null, canEdit = false, myNo = null, busy = false, unsubMe = null;
@@ -87,6 +88,11 @@ if (configured) {
     });
     S.subs = m; mark('สถานะการส่งงาน', snap); if (!snap.metadata.fromCache) mark('สถานะการส่งงาน ', snap); render();
   }, err => { console.warn(err); });
+
+  // exam timetable: separate from homework, only editors can change it
+  onSnapshot(collection(db, 'classes', CLASS_ID, 'exams'), snap => {
+    S.exams = snap.docs.map(x => ({ id: x.id, ...x.data() })); S.examErr = ''; render();
+  }, err => { S.examErr = msgFor(err); console.warn(err); render(); });
 
   onSnapshot(collection(db, 'classes', CLASS_ID, 'claims'), snap => {
     const m = {}; snap.docs.forEach(d => { m[+d.id] = d.data().uid; });
@@ -172,7 +178,7 @@ const rosterText = r => r.map(s => s.no + ' ' + s.name + (s.nick ? ' (' + s.nick
 
 /* ---------- render ---------- */
 function render() {
-  if ((ui.editing || ui.rosterEdit || ui.auth) && document.querySelector('form.edit')) return;
+  if ((ui.editing || ui.examEditing || ui.rosterEdit || ui.auth) && document.querySelector('form.edit')) return;
   const focused = document.activeElement && document.activeElement.id;
   const td = new Date();
   let h = '<div class="wrap"><header><div class="top"><div class="today-h"><div class="big">' + TDF[td.getDay()] + ' ' + td.getDate() + '</div>' +
@@ -185,6 +191,7 @@ function render() {
     if (ui.view === 'cal') h += viewCal();
     else if (ui.view === 'roster') h += viewRoster();
     else if (ui.view === 'tree') h += viewTree();
+    else if (ui.view === 'exam') h += viewExam();
     else h += viewTasks();
   }
   h += '</main></div>';
@@ -196,7 +203,7 @@ function render() {
   if (focused) { const el = document.getElementById(focused); if (el) el.focus(); }
 }
 let shownView = null;
-const ORDER = ['tasks', 'cal', 'tree', 'roster'];
+const ORDER = ['tasks', 'exam', 'cal', 'tree', 'roster'];
 function pageAnim() {
   if (shownView === ui.view) return;
   const main = root.querySelector('main');
@@ -214,12 +221,12 @@ function updateDock() {
     dockEl = document.createElement('nav'); dockEl.className = 'dock'; dockEl.setAttribute('aria-label', 'เมนูหลัก');
     document.body.appendChild(dockEl); bindDock();
   }
-  const tabs = [['tasks', 'งาน', 'list'], ['cal', 'ปฏิทิน', 'cal'], ['tree', 'Focus Tree', 'sprout'], ['roster', 'รายชื่อ', 'users']];
+  const tabs = [['tasks', 'งาน', 'list'], ['exam', 'สอบ', 'exam'], ['cal', 'ปฏิทิน', 'cal'], ['tree', 'Focus Tree', 'sprout'], ['roster', 'รายชื่อ', 'users']];
   const key = tabs.map(t => t[0]).join() + (canEdit ? ',new' : '');
   if (dockEl.dataset.key !== key) {
     dockEl.innerHTML = '<span class="dock-ind" aria-hidden="true"></span>' +
       tabs.map(t => '<button class="tab" data-act="view" data-v="' + t[0] + '" aria-label="' + t[1] + '">' + ico(t[2]) + '</button>').join('') +
-      (canEdit ? '<button class="tab add" data-act="new" aria-label="เพิ่มงาน">' + ico('plus') + '</button>' : '');
+      (canEdit ? '<button class="tab add" data-act="new" aria-label="เพิ่มงานหรือวันสอบ">' + ico('plus') + '</button>' : '');
     dockEl.dataset.key = key;
   }
   dockEl.querySelectorAll('.tab[data-v]').forEach(b => b.setAttribute('aria-current', String(b.dataset.v === ui.view)));
@@ -329,6 +336,7 @@ function viewTasks() {
   const all = sorted(), pending = all.filter(t => !isDone(t));
   let h = '';
   if (S.tasks.length) h += heroHtml(pending);
+  h += nextExamHtml();
   if (myNo != null && !canEdit) {
     const mine = pending.filter(t => !iSent(t));
     const late = mine.filter(t => daysLeft(t) < 0).length;
@@ -418,18 +426,25 @@ function viewCal() {
   const t0 = today(); if (!ui.month) ui.month = new Date(t0.getFullYear(), t0.getMonth(), 1);
   const m = ui.month, first = new Date(m.getFullYear(), m.getMonth(), 1), start = new Date(first); start.setDate(1 - first.getDay());
   const byDay = {}; S.tasks.forEach(t => { (byDay[t.due] = byDay[t.due] || []).push(t); });
+  const exDay = {}; S.exams.forEach(e => { (exDay[e.date] = exDay[e.date] || []).push(e); });
   let h = '<div class="cal-head"><button class="btn small" data-act="mon" data-v="-1" aria-label="เดือนก่อน">‹</button><h2>' + TMF[m.getMonth()] + ' ' + (m.getFullYear() + 543) + '</h2><button class="btn small" data-act="mon" data-v="1" aria-label="เดือนถัดไป">›</button></div><div class="cal-wrap"><div class="cal">';
   TD.forEach(d => { h += '<div class="dow">' + d + '</div>'; });
   for (let i = 0; i < 42; i++) {
-    const d = new Date(start); d.setDate(start.getDate() + i); const k = ymd(d), ts = byDay[k] || [];
+    const d = new Date(start); d.setDate(start.getDate() + i); const k = ymd(d), ts = byDay[k] || [], es = exDay[k] || [];
     if (i === 35 && d.getMonth() !== m.getMonth()) break;
     h += '<button class="day' + (d.getMonth() !== m.getMonth() ? ' out' : '') + (k === ymd(t0) ? ' today' : '') + (ui.sel === k ? ' sel' : '') + '" data-act="day" data-v="' + k + '"><span class="num">' + d.getDate() + '</span>' +
+      es.map(e => '<span class="ev e-exam">สอบ' + esc(e.subject) + '</span>').join('') +
       ts.map(t => '<span class="ev ' + evClass(t) + '">' + esc(t.subject) + '</span>').join('') +
-      (ts.length ? '<span class="dots">' + ts.map(t => '<span class="dot ' + evClass(t) + '"></span>').join('') + '</span>' : '') + '</button>';
+      (ts.length || es.length ? '<span class="dots">' + es.map(() => '<span class="dot e-exam"></span>').join('') + ts.map(t => '<span class="dot ' + evClass(t) + '"></span>').join('') + '</span>' : '') + '</button>';
   }
   h += '</div></div>';
-  if (ui.sel) { const sd = pd(ui.sel), list = byDay[ui.sel] || []; h += '<div class="group-h">' + TD[sd.getDay()] + ' ' + sd.getDate() + ' ' + TMF[sd.getMonth()] + '</div>' + (list.length ? '<div class="list">' + list.map(taskHtml).join('') + '</div>' : '<div class="empty">ไม่มีงานส่งวันนี้</div>'); }
-  else h += '<p class="t-sub" style="margin-top:12px">แตะวันที่เพื่อดูงานที่ต้องส่งวันนั้น</p>';
+  if (ui.sel) {
+    const sd = pd(ui.sel), list = byDay[ui.sel] || [], ex = sortExams(exDay[ui.sel] || []);
+    h += '<div class="group-h">' + TD[sd.getDay()] + ' ' + sd.getDate() + ' ' + TMF[sd.getMonth()] + '</div>';
+    if (ex.length) h += '<div class="list" style="margin-bottom:12px">' + ex.map(examHtml).join('') + '</div>';
+    h += list.length ? '<div class="list">' + list.map(taskHtml).join('') + '</div>' : (ex.length ? '' : '<div class="empty">ไม่มีงานส่งหรือสอบวันนี้</div>');
+  }
+  else h += '<p class="t-sub" style="margin-top:12px">แตะวันที่เพื่อดูงานที่ต้องส่งและวันสอบ</p>';
   return h;
 }
 function viewRoster() {
@@ -456,6 +471,78 @@ function viewRoster() {
     h += '<tr><td class="no">' + s.no + '</td><td><span class="nick">' + esc(s.nick || s.name) + '</span>' + (s.nick ? '<div class="full-name">' + esc(s.name) + '</div>' : '') + '</td><td class="cnt">' + owe.length + '</td><td class="cnt' + (late ? ' bad' : '') + '">' + late + '</td><td>' + acc + '</td></tr>';
   });
   return h + '</tbody></table></div>';
+}
+
+/* ================= Exams =================
+   A timetable of exams, separate from homework (no submissions). Only editors add or change exams. */
+const EXAM_TYPES = ['สอบย่อย', 'เก็บคะแนน', 'กลางภาค', 'ปลายภาค', 'อื่นๆ'];
+const examDays = e => Math.round((pd(e.date) - today()) / 864e5);
+const sortExams = list => list.slice().sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.time || '').localeCompare(String(b.time || '')));
+const upcomingExams = () => sortExams(S.exams.filter(e => examDays(e) >= 0));
+function examWhen(e, long) {
+  const d = pd(e.date);
+  return TD[d.getDay()] + ' ' + d.getDate() + ' ' + (long ? TMF[d.getMonth()] + ' ' + (d.getFullYear() + 543) : TM[d.getMonth()]) + (e.time ? ' · ' + e.time : '');
+}
+function examLeft(e) {
+  // countdown badge: today / tomorrow / in N days (amber within 3 days), or done
+  const n = examDays(e);
+  if (n < 0) return '<span class="pill p-wait">สอบแล้ว</span>';
+  if (n === 0) return '<span class="pill p-late">' + ico('clock') + 'สอบวันนี้</span>';
+  if (n === 1) return '<span class="pill p-soon">' + ico('clock') + 'พรุ่งนี้</span>';
+  return '<span class="pill ' + (n <= 3 ? 'p-soon' : 'p-exam') + '">' + ico('clock') + 'อีก ' + n + ' วัน</span>';
+}
+function nextExamHtml() {
+  const e = upcomingExams()[0]; if (!e) return '';
+  const n = examDays(e);
+  return '<button class="exam-next" data-act="exam-go" data-id="' + e.id + '"><span class="exam-ic">' + ico('exam') + '</span>' +
+    '<span class="exam-next-main"><span class="hero-k">สอบถัดไป' + (e.type ? ' · ' + esc(e.type) : '') + '</span><span class="exam-next-t">' + esc(e.subject) + '</span><span class="t-sub">' + examWhen(e) + '</span></span>' +
+    '<span class="count">' + (n === 0 ? '<span class="n" style="font-size:22px">วันนี้</span>' : '<span class="n">' + n + '</span><span class="u">วัน</span>') + '</span></button>';
+}
+function examHtml(e) {
+  if (ui.examEditing === e.id) return examFormHtml(e);
+  const open = ui.examOpen === e.id, past = examDays(e) < 0;
+  let h = '<div class="task exam' + (past ? ' past' : '') + '"><button class="task-row" data-act="exam-open" data-id="' + e.id + '" aria-expanded="' + open + '">' +
+    '<div class="t-top"><span class="sj ex">' + ico('exam') + esc(e.type || 'สอบ') + '</span>' + examLeft(e) + '</div>' +
+    '<div class="t-title">' + esc(e.subject) + '</div>' +
+    '<div class="t-due">' + ico('cal') + examWhen(e) + '</div>' +
+    (e.scope && !open ? '<div class="t-sub exam-scope1">ออกสอบ: ' + esc(e.scope) + '</div>' : '') + '</button>';
+  if (open) {
+    h += '<div class="detail"><div class="t-sub">' + examWhen(e, true) + '</div>';
+    if (e.scope) h += '<div><div class="hero-k">ขอบเขตที่ออกสอบ</div><p class="note" style="color:var(--fg)">' + esc(e.scope) + '</p></div>';
+    if (e.note) h += '<div><div class="hero-k">หมายเหตุ</div><p class="note">' + esc(e.note) + '</p></div>';
+    if (!past) h += '<div class="row-actions"><button class="btn primary" data-act="exam-read" data-id="' + e.id + '">' + ico('sprout') + 'อ่านสอบวิชานี้ใน Focus Tree</button></div>';
+    if (canEdit) {
+      h += '<div class="row-actions"><button class="btn small" data-act="exam-edit" data-id="' + e.id + '">แก้ไข</button>';
+      h += ui.confirmExamDel === e.id ? '<span class="confirm">ลบวันสอบนี้?<button class="btn small danger" data-act="exam-del" data-id="' + e.id + '">ลบ</button><button class="btn small" data-act="exam-nodel">ยกเลิก</button></span>' : '<button class="btn small danger" data-act="exam-askdel" data-id="' + e.id + '">ลบ</button>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+function examFormHtml(e) {
+  const v = e || { subject: '', type: 'สอบย่อย', date: ymd(new Date(today().getTime() + 7 * 864e5)), time: '', scope: '', note: '' };
+  const subj = [...new Set(subjects().concat(S.exams.map(x => x.subject)).filter(Boolean))].sort();
+  return '<form class="edit" data-id="' + (e ? e.id : 'new') + '" data-kind="exam">' +
+    '<label>วิชา<input id="x-subject" name="subject" list="x-subj-list" required value="' + esc(v.subject) + '" placeholder="เช่น คณิตศาสตร์"></label>' +
+    '<datalist id="x-subj-list">' + subj.map(x => '<option value="' + esc(x) + '">').join('') + '</datalist>' +
+    '<label>ประเภท<select id="x-type" name="type">' + EXAM_TYPES.map(x => '<option' + (x === v.type ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
+    '<label>วันสอบ<input id="x-date" name="date" type="date" required value="' + esc(v.date) + '"></label>' +
+    '<label>เวลา (ไม่บังคับ)<input id="x-time" name="time" value="' + esc(v.time) + '" placeholder="เช่น คาบ 3 หรือ 09:00–10:30"></label>' +
+    '<label class="full">ขอบเขตที่ออกสอบ (ไม่บังคับ)<textarea id="x-scope" name="scope" placeholder="เช่น บทที่ 2–3 เรื่องเซต และตรรกศาสตร์">' + esc(v.scope) + '</textarea></label>' +
+    '<label class="full">หมายเหตุ (ไม่บังคับ)<textarea id="x-note" name="note" placeholder="เช่น ห้องสอบ อุปกรณ์ที่ต้องเอามา คะแนนเต็ม">' + esc(v.note) + '</textarea></label>' +
+    '<div class="row-actions full"><button class="btn primary" type="submit">' + (e ? 'บันทึกการแก้ไข' : 'เพิ่มวันสอบ') + '</button><button class="btn" type="button" data-act="exam-cancel">ยกเลิก</button></div></form>';
+}
+function viewExam() {
+  const up = upcomingExams(), past = sortExams(S.exams.filter(e => examDays(e) < 0)).reverse();
+  let h = '<div class="sec-h"><h2>ตารางสอบ</h2><span>' + (up.length ? 'อีก ' + up.length + ' วิชา' : 'ยังไม่มีสอบ') + '</span></div>';
+  h += '<div class="toolbar"><div class="chips"><span class="t-sub">วันสอบแยกจากงาน ไม่ต้องกดส่ง</span></div>' + (canEdit ? '<button class="btn primary" data-act="exam-new">เพิ่มวันสอบ</button>' : '') + '</div>';
+  if (S.examErr) h += '<div class="setup"><b>โหลดตารางสอบไม่ได้</b><p class="t-sub">' + esc(S.examErr) + '</p></div>';
+  if (ui.examEditing === 'new') h += examFormHtml(null);
+  if (!S.exams.length) return h + '<div class="empty">ยังไม่มีวันสอบ' + (canEdit ? ' กด "เพิ่มวันสอบ" เพื่อลงวันสอบแรก' : '') + '</div>';
+  h += up.length ? '<div class="list">' + up.map(examHtml).join('') + '</div>' : '<div class="empty">ไม่มีสอบที่กำลังจะมาถึง</div>';
+  if (past.length) h += '<div class="group-h">สอบไปแล้ว (' + past.length + ')</div>' + (ui.showPastExam ? '<div class="list">' + past.map(examHtml).join('') + '</div>' : '<button class="btn small" data-act="exam-past">แสดงสอบที่ผ่านไปแล้ว</button>');
+  return h;
 }
 
 /* ================= Focus Tree =================
@@ -788,7 +875,7 @@ function viewTree() {
     h += '<div><div class="hero-k" style="margin-bottom:8px">ตั้งเวลาอ่าน</div><div class="chips ft-subj">' +
       FT_GOALS.concat([0]).map(g => '<button class="chip" data-act="ft-goal" data-v="' + g + '" aria-pressed="' + (ft.goal === g) + '">' + (g ? g + ' นาที' : 'ไม่จำกัด') + '</button>').join('') + '</div>' +
       '<p class="t-sub" style="margin:6px 0 0">' + (ft.goal ? 'อ่านครบ ' + ft.goal + ' นาที ได้ต้นไม้ 1 ต้น' : 'จับเวลาเดินหน้า อ่านครบ ' + OPEN_GOAL + ' นาทีขึ้นไปได้ต้นไม้ 1 ต้น') + '</p></div>';
-    const subs = [...new Set(subjects().concat(['อ่านทั่วไป']))];
+    const subs = [...new Set(subjects().concat(upcomingExams().map(e => e.subject), ['อ่านทั่วไป']))];
     if (!ft.subject || !subs.includes(ft.subject)) ft.subject = subs[0];
     h += '<div><div class="hero-k" style="margin-bottom:8px">วิชาที่จะอ่าน</div><div class="chips ft-subj">' +
       subs.map(x => '<button class="chip" data-act="ft-subj" data-v="' + esc(x) + '" aria-pressed="' + (ft.subject === x) + '">' + esc(x) + '</button>').join('') + '</div></div>';
@@ -943,11 +1030,22 @@ document.addEventListener('click', ev => {
       ui.confirmRelease = null; run(() => b2.commit(), 'ปลดเลขที่ ' + no + ' แล้ว ให้เจ้าของเลือกใหม่ได้');
       break;
     }
-    case 'view': ui.view = v; ui.editing = null; ui.rosterEdit = false; remember(); break;
+    case 'view': ui.view = v; ui.editing = null; ui.examEditing = null; ui.rosterEdit = false; remember(); break;
+    case 'exam-go': ui.view = 'exam'; ui.examOpen = id; remember(); break;
+    case 'exam-open': ui.examOpen = ui.examOpen === id ? null : id; ui.confirmExamDel = null; break;
+    case 'exam-new': ui.view = 'exam'; ui.examEditing = 'new'; forceRender(); { const f = document.querySelector('form.edit'); if (f) f.scrollIntoView({ block: 'center' }); } return;
+    case 'exam-edit': ui.examEditing = id; break;
+    case 'exam-cancel': ui.examEditing = null; break;
+    case 'exam-past': ui.showPastExam = true; break;
+    case 'exam-askdel': ui.confirmExamDel = id; break;
+    case 'exam-nodel': ui.confirmExamDel = null; break;
+    case 'exam-del': ui.confirmExamDel = null; ui.examOpen = null; run(() => deleteDoc(P('exams', id)), 'ลบวันสอบแล้ว'); break;
+    case 'exam-read': { const e = S.exams.find(x => x.id === id); if (e) { ft.subject = e.subject; ui.view = 'tree'; remember(); } break; }
     case 'filter': ui.filter = v; break;
     case 'open': ui.open = ui.open === id ? null : id; ui.confirmDel = null; remember(); break;
     case 'past': ui.showPast = true; break;
-    case 'new': ui.view = 'tasks'; ui.editing = 'new'; remember(); forceRender(); { const f = document.querySelector('form.edit'); if (f) f.scrollIntoView({ block: 'center' }); } return;
+    case 'new': if (ui.view === 'exam') { ui.examEditing = 'new'; forceRender(); { const f = document.querySelector('form.edit'); if (f) f.scrollIntoView({ block: 'center' }); } return; }
+      ui.view = 'tasks'; ui.editing = 'new'; remember(); forceRender(); { const f = document.querySelector('form.edit'); if (f) f.scrollIntoView({ block: 'center' }); } return;
     case 'edit': ui.editing = id; break;
     case 'cancel': ui.editing = null; break;
     case 'askdel': ui.confirmDel = id; break;
@@ -986,6 +1084,15 @@ document.addEventListener('submit', ev => {
     const roster = parseRoster(f.elements.roster.value), cls = f.elements.cls.value.trim() || 'ม.4/2';
     ui.rosterEdit = false; forceRender();
     run(() => setDoc(classRef, { className: cls, roster, updatedAt: serverTimestamp() }, { merge: true }), 'บันทึกรายชื่อ ' + roster.length + ' คนแล้ว');
+    return;
+  }
+  if (f.dataset.kind === 'exam') {
+    const g = n => (f.elements[n].value || '').trim();
+    const data = { subject: g('subject'), type: g('type'), date: g('date'), time: g('time'), scope: g('scope'), note: g('note') };
+    if (!data.subject || !data.date) return;
+    ui.examEditing = null; ui.view = 'exam'; forceRender();
+    if (id === 'new') run(async () => { const r = await addDoc(collection(db, 'classes', CLASS_ID, 'exams'), { ...data, createdAt: serverTimestamp() }); ui.examOpen = r.id; forceRender(); }, 'เพิ่มวันสอบแล้ว');
+    else run(() => updateDoc(P('exams', id), { ...data, updatedAt: serverTimestamp() }), 'บันทึกแล้ว');
     return;
   }
   const data = { subject: f.elements.subject.value.trim(), title: f.elements.title.value.trim(), due: f.elements.due.value, note: f.elements.note.value.trim() };

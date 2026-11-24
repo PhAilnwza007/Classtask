@@ -515,3 +515,23 @@ body.focus-on .dock{display:none}
 .focus-island .tree-stand{flex:1 1 0;min-height:0;width:100%;height:auto;max-height:none;container-type:size;place-items:end center}
 .focus-island .tree-img{height:min(100cqh,50vh,520px);max-height:none}
 .focus-stage{flex:none;margin-top:0}
+
+/* exams: timetable tab, next-exam card, calendar marks (exam colour = soft indigo, apart from homework colours) */
+:root{--exam:#5361a8;--exam-soft:#e3e6f4}
+:root[data-theme="dark"]{--exam:#a9b3ec;--exam-soft:rgba(169,179,236,.16)}
+.p-exam{background:var(--exam-soft);color:var(--exam)}
+.e-exam{background:var(--exam-soft);color:var(--exam);font-weight:600}
+.dot.e-exam{background:var(--exam)}
+.sj.ex{color:var(--exam)}
+.sj.ex svg{stroke:var(--exam)}
+.task.exam{border-left:4px solid var(--exam)}
+.task.exam.past{opacity:.7}
+.exam-scope1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.exam-next{display:flex;align-items:center;gap:14px;width:100%;margin:12px 0 4px;padding:14px 16px;border-radius:22px;text-align:left;font:inherit;color:inherit;cursor:pointer;
+  background:var(--glass);border:1px solid var(--stroke);border-left:4px solid var(--exam);box-shadow:0 10px 30px var(--shadow)}
+.exam-ic{width:42px;height:42px;border-radius:14px;background:var(--exam-soft);display:grid;place-items:center;flex:none}
+.exam-ic svg{width:22px;height:22px;stroke:var(--exam)}
+.exam-next-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.exam-next-t{font-family:var(--f-display);font-size:17px;font-weight:600;overflow-wrap:anywhere}
+.exam-next .count{color:var(--exam)}
+.exam-next .count .n{font-size:32px}
