@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, collectionGroup, onSnapshot, setDoc, addDoc, updateDoc, writeBatch, serverTimestamp, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, CLASS_ID, EDITORS } from "./firebase-config.js?v=2";
 import { DEFAULT_ROSTER } from "./roster-default.js";
 import { bonsaiSvg } from "./bonsai.js?v=3";
@@ -47,7 +47,10 @@ const P = (...seg) => doc(db, 'classes', CLASS_ID, ...seg);
 if (configured) {
   const app = initializeApp(firebaseConfig);
   auth = getAuth(app);
-  db = getFirestore(app);
+  // keep a copy of the class data on the device (IndexedDB): the next visit shows tasks straight from it
+  // while the live data arrives in the background. Falls back to the normal connection if the browser can't.
+  try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
+  catch (e) { db = getFirestore(app); }
   classRef = doc(db, 'classes', CLASS_ID);
   tasksRef = collection(db, 'classes', CLASS_ID, 'tasks');
 
@@ -492,10 +495,12 @@ function watchFocus() {
   let first = true;
   ft.unsub = onSnapshot(fRef(no), { includeMetadataChanges: true }, snap => {
     ft.me = snap.exists() ? snap.data() : null;
-    if (!snap.metadata || !snap.metadata.hasPendingWrites) ft.server = ft.me;
+    const fromServer = !snap.metadata || !snap.metadata.fromCache;
+    if (fromServer && !snap.metadata?.hasPendingWrites) ft.server = ft.me;
     // a session left running by a closed page or another device: close it (the server only credits up to its last heartbeat)
-    if (first && running() && !ft.mine && !ft.session) focusStop(false);
-    first = false;
+    // decide only on the first copy from the server, never on the saved copy on this device (it may be old)
+    if (first && fromServer && running() && !ft.mine && !ft.session) focusStop(false);
+    if (fromServer) first = false;
     if (ui.view === 'tree') render();
   }, () => {});
 }
