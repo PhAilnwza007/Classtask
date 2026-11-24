@@ -494,7 +494,7 @@ function examLeft(e) {
 function nextExamHtml() {
   const e = upcomingExams()[0]; if (!e) return '';
   const n = examDays(e);
-  return '<button class="exam-next" data-act="exam-go" data-id="' + e.id + '"><span class="exam-ic">' + ico('exam') + '</span>' +
+  return '<button class="exam-next" data-act="exam-go" data-id="' + e.id + '">' +
     '<span class="exam-next-main"><span class="hero-k">สอบถัดไป' + (e.type ? ' · ' + esc(e.type) : '') + '</span><span class="exam-next-t">' + esc(e.subject) + '</span><span class="t-sub">' + examWhen(e) + '</span></span>' +
     '<span class="count">' + (n === 0 ? '<span class="n" style="font-size:22px">วันนี้</span>' : '<span class="n">' + n + '</span><span class="u">วัน</span>') + '</span></button>';
 }
