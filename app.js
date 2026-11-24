@@ -42,6 +42,18 @@ let user = null, canEdit = false, myNo = null, busy = false, unsubMe = null;
 const root = document.getElementById('root');
 const configured = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('YOUR_');
 
+// ---- load timer: open the site with ?debug at the end of the link to see where the loading time goes ----
+const DBG = /[?&]debug/.test(location.search), MARKS = [], seen = new Set();
+function mark(name, snap, once = true) {
+  if (!DBG || (once && seen.has(name))) return; seen.add(name);
+  const src = snap && snap.metadata ? (snap.metadata.fromCache ? ' (จากเครื่อง)' : ' (จากเซิร์ฟเวอร์)') : '';
+  const n = snap && snap.size != null ? ' · ' + snap.size + ' รายการ' : '';
+  MARKS.push((performance.now() / 1000).toFixed(2) + ' วิ  ' + name + src + n);
+  let el = document.getElementById('dbg');
+  if (!el) { el = document.createElement('pre'); el.id = 'dbg'; el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;margin:0;padding:8px 10px;max-width:92vw;font:12px/1.5 ui-monospace,monospace;background:rgba(0,0,0,.78);color:#e8ffd8;border-radius:8px;white-space:pre-wrap;pointer-events:none'; document.body.appendChild(el); }
+  el.textContent = MARKS.join('\n');
+}
+mark('โหลดไฟล์ทั้งหมดเสร็จ เริ่มทำงาน');
 let auth, db, classRef, tasksRef;
 const P = (...seg) => doc(db, 'classes', CLASS_ID, ...seg);
 if (configured) {
@@ -49,8 +61,8 @@ if (configured) {
   auth = getAuth(app);
   // keep a copy of the class data on the device (IndexedDB): the next visit shows tasks straight from it
   // while the live data arrives in the background. Falls back to the normal connection if the browser can't.
-  try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
-  catch (e) { db = getFirestore(app); }
+  try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); mark('เปิดที่เก็บข้อมูลในเครื่องได้'); }
+  catch (e) { db = getFirestore(app); mark('เปิดที่เก็บข้อมูลในเครื่องไม่ได้: ' + e.message); }
   classRef = doc(db, 'classes', CLASS_ID);
   tasksRef = collection(db, 'classes', CLASS_ID, 'tasks');
 
@@ -58,12 +70,12 @@ if (configured) {
     const d = snap.data() || {};
     S.className = d.className || 'ม.4/2';
     S.roster = Array.isArray(d.roster) ? d.roster : [];
-    S.loaded.cls = true; render();
+    S.loaded.cls = true; mark('ข้อมูลห้อง', snap); if (!snap.metadata.fromCache) mark('ข้อมูลห้อง ', snap); render();
   }, err => { S.error = msgFor(err); render(); });
 
   onSnapshot(tasksRef, snap => {
     S.tasks = snap.docs.map(x => ({ id: x.id, ...x.data() }));
-    S.loaded.tasks = true; render();
+    S.loaded.tasks = true; mark('รายการงาน', snap); if (!snap.metadata.fromCache) mark('รายการงาน ', snap); render();
   }, err => { S.error = msgFor(err); render(); });
 
   onSnapshot(collectionGroup(db, 'subs'), snap => {
@@ -73,7 +85,7 @@ if (configured) {
       if (!cls || cls.id !== CLASS_ID) return;
       (m[task.id] = m[task.id] || new Set()).add(+d.id);
     });
-    S.subs = m; render();
+    S.subs = m; mark('สถานะการส่งงาน', snap); if (!snap.metadata.fromCache) mark('สถานะการส่งงาน ', snap); render();
   }, err => { console.warn(err); });
 
   onSnapshot(collection(db, 'classes', CLASS_ID, 'claims'), snap => {
@@ -82,6 +94,7 @@ if (configured) {
   }, err => { console.warn(err); });
 
   onAuthStateChanged(auth, u => {
+    mark('เช็กการล็อกอินเสร็จ');
     user = u; myNo = null;
     canEdit = !!(u && u.email && EDITORS.includes(u.email.toLowerCase()));
     if (unsubMe) { unsubMe(); unsubMe = null; }
