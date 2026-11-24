@@ -524,11 +524,10 @@ body.focus-on .dock{display:none}
 .dot.e-exam{background:var(--exam)}
 .sj.ex{color:var(--exam)}
 .sj.ex svg{stroke:var(--exam)}
-.task.exam{border-left:4px solid var(--exam)}
 .task.exam.past{opacity:.7}
 .exam-scope1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .exam-next{display:flex;align-items:center;gap:14px;width:100%;margin:12px 0 4px;padding:14px 16px;border-radius:22px;text-align:left;font:inherit;color:inherit;cursor:pointer;
-  background:var(--glass);border:1px solid var(--stroke);border-left:4px solid var(--exam);box-shadow:0 10px 30px var(--shadow)}
+  background:var(--glass);border:1px solid var(--stroke);box-shadow:0 10px 30px var(--shadow)}
 .exam-ic{width:42px;height:42px;border-radius:14px;background:var(--exam-soft);display:grid;place-items:center;flex:none}
 .exam-ic svg{width:22px;height:22px;stroke:var(--exam)}
 .exam-next-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
