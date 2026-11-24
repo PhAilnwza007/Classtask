@@ -6,6 +6,8 @@ import { DEFAULT_ROSTER } from "./roster-default.js";
 import { bonsaiSvg } from "./bonsai.js?v=3";
 import { lotusSvg } from "./lotus.js?v=1";
 import { lotusScene } from "./lotus-scene.js?v=1";
+import { hydrangeaSvg } from "./hydrangea.js?v=1";
+import { hydrangeaScene } from "./hydrangea-scene.js?v=3";
 
 const TM = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const TMF = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
@@ -455,7 +457,7 @@ const FULL = FT_STAGES.length - 1;
 const FT_GOALS = [30, 45, 60, 90, 120]; // minutes; 0 = no limit (a tree after 30 minutes)
 const OPEN_GOAL = 30;
 // kinds of tree a student can choose to plant; same drawing interface (seed, p, detail, cls, layer, anim)
-const FT_KINDS = { bonsai: { name: 'บอนไซ', svg: bonsaiSvg }, lotus: { name: 'บัวลายคราม', svg: lotusSvg } };
+const FT_KINDS = { bonsai: { name: 'บอนไซ', svg: bonsaiSvg }, lotus: { name: 'บัวลายคราม', svg: lotusSvg }, hydrangea: { name: 'ไฮเดรนเยีย', svg: hydrangeaSvg } };
 const kindOk = k => FT_KINDS[k] ? k : 'bonsai';
 // which kind each planted tree is (by tree number), kept on this device
 function forestKinds() { try { return JSON.parse(localStorage.getItem('ct-forest-' + myNo) || '{}') || {}; } catch (e) { return {}; } }
@@ -825,7 +827,7 @@ function focusOverlay() {
   const ph = S2.phase, done = ph === 'done' || ph === 'withered', g = goalSecOf(S2), t = sessionSec();
   const gp = growStep(done ? (S2.tree ? 1 : S2.shown / g) : t / g), st = stageOf(gp);
   let h = '<div class="focus k-' + kindOk(S2.kind) + (ph === 'withered' ? ' withered' : '') + (ph === 'paused' ? ' paused' : '') + '" role="dialog" aria-modal="true" aria-label="โหมดโฟกัส">' +
-    (S2.kind === 'lotus' ? lotusScene() : zenBg()) +
+    (S2.kind === 'lotus' ? lotusScene() : S2.kind === 'hydrangea' ? hydrangeaScene() : zenBg()) +
     '<div class="focus-top"><div class="focus-subj"><i></i>' + esc(S2.subject) + '</div><div class="t-sub">' + (done ? 'รอบนี้' : (S2.goal ? 'ตั้งไว้ ' + S2.goal + ' นาที' : 'จับเวลาไม่จำกัด')) + '</div></div>' +
     (done ? '' : '<button class="focus-sound" data-act="ft-sound" aria-label="เสียงบรรยากาศ" aria-expanded="' + SND.open + '">' + ico(SND.kind === 'off' ? 'mute' : 'sound') + '</button>') +
     '<div class="focus-island"><div class="tree-stand">' + focusTree(sessionSeed(), gp, S2.kind, ph === 'focus' || (ph === 'done' && S2.tree)) + '</div>' + '<div class="focus-stage">' + FT_STAGES[st][1] + '</div></div>';
